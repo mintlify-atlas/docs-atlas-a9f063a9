@@ -1,7 +1,7 @@
 ---
 title: "Integrate Google Calendar and Google Meet with Tymeslot"
 sidebarTitle: "Google"
-description: "Connect Google Calendar for two-way sync and Google Meet for automatic video room creation. Requires a Google Cloud OAuth 2.0 app with Calendar and Meet APIs enabled."
+description: "Connect Google Calendar for two-way sync and auto-create Google Meet rooms on booking. One Google Cloud OAuth 2.0 app covers both integrations."
 ---
 
 Tymeslot's Google integration covers two things with a single OAuth 2.0 app: **Google Calendar** keeps your availability accurate by syncing events in both directions, and **Google Meet** auto-generates a video room the moment a booking is confirmed. You create one OAuth credential set in Google Cloud Console, paste three environment variables, and both features light up together.
@@ -54,10 +54,11 @@ Tymeslot's Google integration covers two things with a single OAuth 2.0 app: **G
 
     - **Application type**: Web application
     - **Name**: `Tymeslot` (or any label you prefer)
-    - Under **Authorized redirect URIs**, add **both** of the following (both are needed — the first is for Google Calendar, the second for Google Meet):
+    - Under **Authorized redirect URIs**, add the following. The first two are always required; add the third only if you are enabling Google login (`ENABLE_GOOGLE_AUTH=true`):
       ```
       https://your-domain.com/auth/google/calendar/callback
       https://your-domain.com/auth/google/video/callback
+      https://your-domain.com/auth/google/callback
       ```
       Replace `your-domain.com` with your actual Tymeslot hostname. The URIs must be exact matches — no trailing slashes.
     - Click **Create**.

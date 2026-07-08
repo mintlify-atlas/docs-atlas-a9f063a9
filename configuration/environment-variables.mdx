@@ -1,5 +1,5 @@
 ---
-title: "Tymeslot Environment Variable Reference"
+title: "Tymeslot Environment Variables — Complete Reference"
 sidebarTitle: "Env Variables"
 description: "Complete reference for all Tymeslot environment variables. Covers required settings, email, OAuth, database, proxy, analytics, Stripe, and more."
 ---
@@ -77,6 +77,10 @@ These three variables must be set before Tymeslot will start. The application ra
   Set to `false` to disable new user registration. Applies to all authentication methods including SSO and social login.
 </ParamField>
 
+<ParamField path="PASSWORD_AUTH_ENABLED" type="boolean" default="true">
+  Set to `false` to disable email/password authentication entirely. Useful when you want users to log in exclusively via SSO or social login. Disable registration alongside this (`REGISTRATION_ENABLED=false`) to create a fully SSO-only instance.
+</ParamField>
+
 <ParamField path="DNS_CLUSTER_QUERY" type="string">
   DNS SRV query for multi-node Erlang clustering. Leave unset for single-node deployments (the default for most self-hosters).
 </ParamField>
@@ -99,8 +103,8 @@ These three variables must be set before Tymeslot will start. The application ra
   PostgreSQL username.
 </ParamField>
 
-<ParamField path="DATABASE_POOL_SIZE" type="integer" default="10">
-  Ecto database connection pool size. The container entrypoint defaults this to `10`. Raise it for higher concurrency workloads and ensure your PostgreSQL `max_connections` is set higher than this value.
+<ParamField path="DATABASE_POOL_SIZE" type="integer" default="60">
+  Ecto database connection pool size. The runtime default is `60`, which is sized to support Tymeslot's background job concurrency (Oban workers). Raise it for very high-traffic deployments and ensure your PostgreSQL `max_connections` stays above this value — the embedded PostgreSQL defaults to `max_connections=100`, leaving headroom for administrative connections.
 </ParamField>
 
 ## Email configuration

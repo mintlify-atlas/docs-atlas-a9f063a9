@@ -1,5 +1,5 @@
 ---
-title: "Video Conferencing Integrations for Tymeslot"
+title: "Video Conferencing Integrations for Tymeslot Self-Hosting"
 sidebarTitle: "Video"
 description: "Auto-create video rooms on booking with Google Meet, Microsoft Teams, Zoom, or MiroTalk. Each provider requires an OAuth app or API credentials."
 ---
@@ -18,7 +18,7 @@ Tymeslot supports five video providers: three OAuth-based cloud services (Google
     Enterprise OAuth integration. Teams meetings are created via Microsoft Graph. Covered by the same Azure AD app as Outlook Calendar — no separate credential setup.
   </Card>
   <Card title="Zoom" icon="video">
-    OAuth integration via a Zoom Marketplace app. Requires `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, `ZOOM_STATE_SECRET`, and `ZOOM_DEAUTH_SECRET`.
+    OAuth integration via a Zoom Marketplace app. Requires a Zoom Marketplace OAuth app — configure credentials via environment variables (see setup below).
   </Card>
   <Card title="MiroTalk P2P" icon="server">
     Self-hosted peer-to-peer video. Users provide their MiroTalk server URL and API key in the dashboard. No cloud account needed.
@@ -45,7 +45,11 @@ See the [Microsoft integration guide](/integrations/microsoft) for the full Azur
 
 ## Zoom
 
-Zoom requires its own Marketplace app and three environment variables. The deauthorisation webhook variable (`ZOOM_DEAUTH_SECRET`) is additionally required for Zoom's mandatory app deauthorisation callback — Zoom calls `POST /auth/zoom/deauthorize` when a user disconnects the app from their Zoom account, and the secret is used to verify the request signature.
+Zoom requires its own Marketplace app and four environment variables. The deauthorisation webhook variable (`ZOOM_DEAUTH_SECRET`) is additionally required for Zoom's mandatory app deauthorisation callback — Zoom calls `POST /auth/zoom/deauthorize` when a user disconnects the app from their Zoom account, and the secret is used to verify the request signature.
+
+<Note>
+  The Zoom environment variables (`ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, `ZOOM_STATE_SECRET`, `ZOOM_DEAUTH_SECRET`) are not included in the default `.env.example` template because Zoom is an optional integration. Add them manually to your `.env` file when setting up a Zoom Marketplace app.
+</Note>
 
 <Steps>
   <Step title="Create a Zoom Marketplace app">

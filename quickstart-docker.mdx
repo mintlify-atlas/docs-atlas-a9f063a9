@@ -15,7 +15,7 @@ Tymeslot ships as a single Docker image with PostgreSQL embedded — there's not
 | Disk | 1 GB free | 5 GB+ |
 | OS | Any Linux (64-bit) | Ubuntu 22.04 / Debian 12 |
 
-A domain name is optional for local testing but required for a production deployment with SSL. For reverse proxy setup (Nginx, Caddy, Traefik), see the [Reverse Proxy Setup](https://tymeslot.app/docs/reverse-proxy) guide.
+A domain name is optional for local testing but required for a production deployment with SSL. For reverse proxy setup (Nginx, Caddy, Traefik), see the [Reverse Proxy Setup](/configuration/reverse-proxy) guide.
 
 ## Choose your install path
 
@@ -24,11 +24,11 @@ A domain name is optional for local testing but required for a production deploy
     The fastest way to get started. Docker pulls the published image from Docker Hub automatically.
 
     <Warning>
-      **Keep `tymeslot_pg` as a named volume.** Swapping it for a host path (e.g. `./pgdata:/var/lib/postgresql/data`) can break first-run initialisation on Docker Desktop, rootless Docker, userns-remap, or SELinux-enforcing hosts because the mount arrives with an ownership the container can't change. If you need the database on a specific host path, use an [external PostgreSQL](https://tymeslot.app/docs/env-reference) instance instead.
+      **Keep `tymeslot_pg` as a named volume.** Swapping it for a host path (e.g. `./pgdata:/var/lib/postgresql/data`) can break first-run initialisation on Docker Desktop, rootless Docker, userns-remap, or SELinux-enforcing hosts because the mount arrives with an ownership the container can't change. If you need the database on a specific host path, use an [external PostgreSQL](/configuration/external-database) instance instead.
     </Warning>
 
     <Warning>
-      **Email defaults to silent discard.** Without email configuration, `EMAIL_ADAPTER` defaults to `test`, which **drops every message** — password resets, booking confirmations, and reminders all vanish with no error. Configure SMTP or Postmark before going live. See the [SMTP guide](https://tymeslot.app/docs/email-smtp) and [Postmark guide](https://tymeslot.app/docs/email-postmark).
+      **Email defaults to silent discard.** Without email configuration, `EMAIL_ADAPTER` defaults to `test`, which **drops every message** — password resets, booking confirmations, and reminders all vanish with no error. Configure SMTP or Postmark before going live. See the [Email Configuration](/configuration/email) guide.
     </Warning>
 
     Run the following command to start Tymeslot with SMTP email configured:
@@ -107,7 +107,7 @@ A domain name is optional for local testing but required for a production deploy
         ```
 
         <Warning>
-          **Email defaults to silent discard.** Without email configuration, `EMAIL_ADAPTER` defaults to `test`, which **drops every message**. Add SMTP or Postmark variables to `.env` before going live.
+          **Email defaults to silent discard.** Without email configuration, `EMAIL_ADAPTER` defaults to `test`, which **drops every message**. Add SMTP or Postmark variables to `.env` before going live. See the [Email Configuration](/configuration/email) guide.
         </Warning>
       </Step>
 
@@ -276,9 +276,20 @@ docker stop tymeslot && docker rm tymeslot
   </Accordion>
 </AccordionGroup>
 
+## Data-at-rest encryption
+
+Integration credentials (calendar tokens, CalDAV passwords, video API keys) are encrypted at rest. By default the encryption key is derived from `SECRET_KEY_BASE`, which means rotating your session secret would make stored credentials unreadable. Setting a dedicated `DATA_ENCRYPTION_KEY` decouples the two so you can rotate `SECRET_KEY_BASE` freely.
+
+```bash
+# Add to your .env (generate once, keep stable forever)
+DATA_ENCRYPTION_KEY=$(openssl rand -base64 48 | tr -d '\n')
+```
+
+See [Data-at-Rest Encryption](/configuration/data-encryption) for full details, including how to migrate existing credentials onto the new key.
+
 ## Next steps
 
-- **Configure email** — test password reset to verify delivery is working.
-- **Set up a reverse proxy** — see the [Reverse Proxy Setup](https://tymeslot.app/docs/reverse-proxy) guide for Nginx and Caddy walkthroughs with SSL.
+- **Configure email** — test password reset to verify delivery is working. See [Email Configuration](/configuration/email).
+- **Set up a reverse proxy** — see the [Reverse Proxy Setup](/configuration/reverse-proxy) guide for Nginx and Caddy walkthroughs with SSL.
 - **Connect calendar integrations** — Google Calendar and Outlook from **Dashboard → Integrations**.
-- **Full environment variable reference** — every supported variable with annotations lives in the [Environment Variable Reference](https://tymeslot.app/docs/env-reference).
+- **Full environment variable reference** — every supported variable with annotations lives in the [Environment Variables](/configuration/environment-variables) reference.

@@ -1,5 +1,5 @@
 ---
-title: "Protect Tymeslot Forms with Google reCAPTCHA v3"
+title: "Protect Tymeslot Signup and Booking with reCAPTCHA v3"
 sidebarTitle: "reCAPTCHA"
 description: "Add invisible reCAPTCHA v3 protection to signup and booking forms to block automated submissions. Configure per-form score thresholds and action names."
 ---
@@ -136,6 +136,6 @@ The reCAPTCHA Admin Console (at [https://www.google.com/recaptcha/admin](https:/
 - If the distribution shows most legitimate traffic scoring above `0.7`, you can safely raise the threshold closer to `0.5`.
 - If you are seeing false positive rejections from real users, lower the threshold or check whether a browser extension or Content Security Policy is interfering with the reCAPTCHA script.
 
-<Warning>
-  If a user's browser blocks the reCAPTCHA script (ad blocker, strict CSP, JavaScript disabled), the form submission carries a special `RECAPTCHA_SCRIPT_BLOCKED` marker instead of a score token. Tymeslot detects this marker and returns an error asking the user to enable JavaScript and reload. Make sure your Content Security Policy allows `https://www.google.com` and `https://www.gstatic.com` if you serve a custom CSP header.
-</Warning>
+<Note>
+  If a user's browser blocks the reCAPTCHA script (ad blocker, strict CSP, or JavaScript disabled), no score token is sent with the form submission. Make sure your Content Security Policy allows `https://www.google.com` and `https://www.gstatic.com` if you serve a custom CSP header.
+</Note>

@@ -84,10 +84,8 @@ Tymeslot will run all schema migrations automatically on first startup.
 
 ## Connection pool tuning
 
-<ParamField path="DATABASE_POOL_SIZE" type="integer" default="10">
-  Number of database connections in the Ecto pool. The container entrypoint defaults this to `10`.
-
-  For higher-concurrency deployments, raise this value and ensure your PostgreSQL `max_connections` is set above it. A good rule of thumb: `max_connections` should be at least `DATABASE_POOL_SIZE + 10` to leave headroom for administrative connections.
+<ParamField path="DATABASE_POOL_SIZE" type="integer" default="60">
+  Number of database connections in the Ecto pool. The runtime default is `60`, which supports Tymeslot's background job concurrency. For external managed databases with tighter connection limits, lower this value and ensure your PostgreSQL `max_connections` is set above it. A good rule of thumb: `max_connections` should be at least `DATABASE_POOL_SIZE + 10` to leave headroom for administrative connections.
 
   ```bash
   DATABASE_POOL_SIZE=20

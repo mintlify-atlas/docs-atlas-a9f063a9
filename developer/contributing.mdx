@@ -1,7 +1,7 @@
 ---
-title: "Contribute to Tymeslot"
+title: "Contributing to Tymeslot: Bugs, Features, and Themes"
 sidebarTitle: "Contributing"
-description: "Report bugs, submit pull requests, add themes, integrations, or translations. Start with CONTRIBUTING.md, set up the Elixir/Phoenix dev environment, and follow code standards."
+description: "Report bugs, submit pull requests, add themes, or integrations. Set up the Elixir/Phoenix dev environment, follow code standards, and sign off with DCO."
 ---
 
 Tymeslot is open source under the [GNU AGPLv3](https://www.gnu.org/licenses/agpl-3.0.html) and actively welcomes contributions. The code you self-host is the same code that runs in production at [tymeslot.app](https://tymeslot.app) — so every improvement benefits both self-hosters and cloud users. Whether you fix a bug, add a theme, improve a translation, or write a test, your work matters.
@@ -151,7 +151,7 @@ Only `Repo.transaction`, `Repo.rollback`, and `Repo.preload` are permitted in do
 
 ### Module structure
 
-```
+```text
 lib/tymeslot/
 ├── auth/                     # Authentication domain
 │   ├── auth.ex               # Public context API
@@ -190,7 +190,7 @@ git rebase --signoff <base-branch>
 
 ### Branch naming
 
-```
+```text
 feature/add-teams-video-integration
 fix/calendar-sync-timezone-bug
 docs/improve-oauth-setup-guide
@@ -201,7 +201,7 @@ refactor/simplify-availability-calculation
 
 Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
-```
+```text
 feat(auth): add GitHub OAuth integration
 fix(calendar): resolve timezone conversion bug
 docs(readme): update installation instructions
@@ -211,7 +211,7 @@ refactor(themes): extract shared wrapper helpers
 
 The changelog is auto-generated from `feat` and `fix` commits. To exclude a commit (e.g. an internal test fix), add a `Changelog: skip` footer:
 
-```
+```text
 fix(core): unwrap tuple in OAuth session test
 
 Changelog: skip

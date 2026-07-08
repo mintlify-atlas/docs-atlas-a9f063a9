@@ -1,7 +1,7 @@
 ---
-title: "Upgrade Tymeslot to a New Version"
+title: "Upgrade Your Self-Hosted Tymeslot to a New Version"
 sidebarTitle: "Upgrading"
-description: "Update a self-hosted Tymeslot instance. Pull the latest Docker image, run database migrations automatically on startup, and handle volume rename for older installs."
+description: "Pull the latest Docker image, let startup run migrations automatically, and handle the volume rename if upgrading an older Tymeslot install."
 ---
 
 Upgrading a self-hosted Tymeslot instance is designed to be straightforward: database migrations run automatically when the container starts, so there is no separate migration step to remember. The general process is to pull the new image, replace the running container, and let startup handle the rest. This page covers the exact commands for each deployment method, a note about a volume rename that affects older installs, and how to pin to a specific version.

@@ -1,13 +1,15 @@
 ---
-title: "Collect Meeting Payments via Stripe Connect"
+title: "Accept Meeting Payments via Stripe Connect in Tymeslot"
 sidebarTitle: "Stripe Payments"
-description: "Enable optional paid bookings through Stripe Connect. Self-hosters register their own Stripe platform — Tymeslot never holds funds or takes a cut by default."
+description: "Enable optional paid bookings through Stripe Connect. Self-hosters register their own Stripe platform — Tymeslot never holds funds by default."
 ---
 
 Tymeslot can collect payment from attendees at the time of booking through **Stripe Connect**. The feature is off by default — self-hosters opt in by registering their own Stripe platform and setting three environment variables. Tymeslot never holds funds: charges flow directly into the connected host's Stripe balance on their existing payout schedule. The platform application fee defaults to 0%, so you take nothing unless you explicitly set one.
 
 <Note>
   Meeting payments are **disabled by default** on all self-hosted instances. You must set `MEETING_PAYMENTS_ENABLED=true` to enable the feature. There is no platform fee unless you set `MEETING_PAYMENTS_APPLICATION_FEE_BP` to a non-zero value — self-hosters keep 100% of payment revenue by default.
+
+  The Stripe environment variables are not included in the default `.env.example` template because this is an advanced optional feature. Add them manually to your `.env` file when setting up Stripe Connect.
 </Note>
 
 ## How it works

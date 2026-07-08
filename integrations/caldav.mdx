@@ -1,7 +1,7 @@
 ---
-title: "Connect CalDAV Calendars to Tymeslot"
+title: "Connect CalDAV Calendars to Tymeslot — Self-Hosted Sync"
 sidebarTitle: "CalDAV"
-description: "Sync Tymeslot with any CalDAV server: Nextcloud, Radicale, Zimbra, Baikal, Apple iCloud, and mailbox.org. No OAuth app required — uses username and password."
+description: "Sync Tymeslot with Nextcloud, Radicale, Zimbra, Baikal, Apple iCloud, and mailbox.org via CalDAV. No OAuth app required — credential-based."
 ---
 
 Tymeslot supports CalDAV, the open standard for calendar sync, which means you can connect almost any self-hosted or third-party calendar server without registering an OAuth app or touching the Google Cloud Console or Azure Portal. Users provide their CalDAV server URL, username, and password directly in the Tymeslot dashboard — no admin-level setup required beyond deciding whether to allow connections to private network addresses.
@@ -13,9 +13,9 @@ Tymeslot supports CalDAV, the open standard for calendar sync, which means you c
 | **Setup required by admin** | OAuth 2.0 app in Google Cloud | Azure AD app registration | None (optional: `ALLOW_PRIVATE_IPS_FOR_CALENDAR`) |
 | **User credentials** | OAuth — Google account | OAuth — Microsoft account | Server URL + username + password |
 | **Real-time push** | Google push channels (with `WEBHOOK_BASE_URL`) | Graph subscriptions (with `WEBHOOK_BASE_URL`) | Not supported — polling only |
-| **Default sync interval** | 15-minute fallback polling | 15-minute fallback polling | 15 minutes |
+| **Default sync interval** | 15-minute fallback polling | 15-minute fallback polling | Periodic polling (15–60 min) |
 
-CalDAV does not support server-initiated push webhooks. Tymeslot polls CalDAV calendars on a 15-minute cycle regardless of whether `WEBHOOK_BASE_URL` is set. This is fully functional — availability and conflict checks remain accurate within the polling window.
+CalDAV does not support server-initiated push webhooks. Tymeslot polls CalDAV calendars periodically regardless of whether `WEBHOOK_BASE_URL` is set. The polling frequency is determined automatically by the capabilities of your CalDAV server — see [Polling interval](#polling-interval) below for details. This is fully functional — availability and conflict checks remain accurate within the polling window.
 
 ## Supported CalDAV servers
 
@@ -76,7 +76,15 @@ http://<host>:<port>/<username>/
 
 ## Polling interval
 
-CalDAV calendars are polled every **15 minutes**. This interval is fixed — CalDAV servers do not support push notifications that would allow Tymeslot to receive change events in real time. All conflict checks at the moment of booking use the most recent cached state, so in practice double-bookings are prevented even between polling cycles.
+CalDAV servers do not support push notifications, so Tymeslot polls on a schedule. The polling frequency is determined automatically based on what your CalDAV server supports:
+
+| Sync tier | How it works | Interval |
+|---|---|---|
+| **Tier 1** — sync-token delta | Server supports `sync-token`; only changed events are fetched | Every 15 minutes |
+| **Tier 2** — CTag check | Server supports `getctag`; Tymeslot checks the collection tag and fetches only when it changes | Every 30 minutes |
+| **Tier 3** — full fetch | Server supports neither; Tymeslot re-fetches all events on every cycle | Every 60 minutes |
+
+Tymeslot detects which tier your server supports automatically on the first sync and adjusts its schedule accordingly. All conflict checks at the moment of booking use the most recent cached state, so double-bookings are prevented even between polling cycles.
 
 ## Connecting CalDAV from the dashboard
 

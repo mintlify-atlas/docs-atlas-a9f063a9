@@ -43,7 +43,7 @@ Railway is a managed deployment platform that provisions servers, handles SSL, a
     ```
 
     <Warning>
-      **Email defaults to silent discard.** Without email configuration, `EMAIL_ADAPTER` defaults to `test`, which **drops every message** — password resets, booking confirmations, and reminders all vanish with no error. Add SMTP or Postmark variables before going live. See the [SMTP guide](https://tymeslot.app/docs/email-smtp) and [Postmark guide](https://tymeslot.app/docs/email-postmark).
+      **Email defaults to silent discard.** Without email configuration, `EMAIL_ADAPTER` defaults to `test`, which **drops every message** — password resets, booking confirmations, and reminders all vanish with no error. Add SMTP or Postmark variables before going live. See the [Email Configuration](/configuration/email) guide.
     </Warning>
   </Step>
 
@@ -102,4 +102,4 @@ See [ADMIN.md](https://github.com/Tymeslot/tymeslot/blob/main/docs/ADMIN.md) for
 
 - **Configure email** — add `EMAIL_ADAPTER`, `SMTP_*`, or `POSTMARK_API_KEY` variables under the Railway service's **Variables** tab.
 - **Connect calendar integrations** — Google Calendar, Outlook, and CalDAV from **Dashboard → Integrations** once you're logged in.
-- **Full environment variable reference** — every supported variable with annotations at the [Environment Variable Reference](https://tymeslot.app/docs/env-reference).
+- **Full environment variable reference** — every supported variable with annotations in the [Environment Variables](/configuration/environment-variables) reference.

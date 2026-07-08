@@ -1,7 +1,7 @@
 ---
-title: "Slack and Telegram Booking Notifications"
+title: "Configure Slack and Telegram Booking Notifications"
 sidebarTitle: "Notifications"
-description: "Send booking alerts to Slack channels or Telegram chats. Enable at the instance level with environment variables; users configure their own tokens in the dashboard."
+description: "Enable Slack and Telegram booking notifications for Tymeslot. Set one env var per channel; users connect their own credentials in the dashboard."
 ---
 
 Tymeslot supports two external notification channels — Telegram and Slack — that send alerts when meetings are booked, cancelled, or rescheduled. Both integrations are **disabled by default** and must be enabled by the instance administrator using environment variables. Once enabled at the instance level, each user connects their own credentials through their personal dashboard. This page covers how to enable each integration and what environment variables to set.
@@ -58,7 +58,7 @@ Tymeslot supports two external notification channels — Telegram and Slack — 
       <Step title="Add bot token scopes">
         In your app settings, go to **OAuth & Permissions** → **Scopes** → **Bot Token Scopes** and add the following scopes:
 
-        ```
+        ```text
         chat:write
         chat:write.public
         channels:read
@@ -70,11 +70,11 @@ Tymeslot supports two external notification channels — Telegram and Slack — 
       <Step title="Set the OAuth redirect URL">
         Still in **OAuth & Permissions**, add a redirect URL under **Redirect URLs**:
 
-        ```
-        https://<your-domain>/api/slack/oauth/callback
+        ```text
+        <your-domain>/api/slack/oauth/callback
         ```
 
-        Replace `<your-domain>` with your actual Tymeslot hostname.
+        Replace `<your-domain>` with your actual Tymeslot hostname (e.g. `https://tymeslot.yourdomain.com`).
       </Step>
 
       <Step title="Install the app to your workspace">
