@@ -1,0 +1,116 @@
+{
+  "projectType": "saas",
+  "projectName": "Tymeslot",
+  "projectDescription": "Open-source, self-hostable meeting scheduling platform built with Elixir/Phoenix LiveView — offering booking pages, calendar sync, video rooms, webhooks, and automated emails.",
+  "theme": "luma",
+  "primaryColor": "#0c9491",
+  "lightColor": "#18bfc9",
+  "darkColor": "#76d5e8",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart-docker",
+              "quickstart-cloudron",
+              "quickstart-railway"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/environment-variables",
+              "configuration/email",
+              "configuration/reverse-proxy",
+              "configuration/external-database",
+              "configuration/data-encryption"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/google",
+              "integrations/microsoft",
+              "integrations/caldav",
+              "integrations/video",
+              "integrations/stripe-payments"
+            ]
+          },
+          {
+            "group": "Authentication & SSO",
+            "pages": [
+              "auth/overview",
+              "auth/github",
+              "auth/oidc-sso",
+              "auth/recaptcha"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "operations/admin",
+              "operations/backup-restore",
+              "operations/upgrading",
+              "operations/notifications"
+            ]
+          },
+          {
+            "group": "Developer",
+            "pages": [
+              "developer/webhooks",
+              "developer/embed",
+              "developer/themes",
+              "developer/contributing"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Self-hostable with Docker (single container, embedded PostgreSQL)",
+    "Booking pages with customizable meeting types and availability rules",
+    "Two-way calendar sync: Google Calendar, Outlook, Apple iCloud, CalDAV (Nextcloud, Radicale, Zimbra, Baikal, mailbox.org)",
+    "Video conferencing: Google Meet, Microsoft Teams, Zoom, MiroTalk, custom links",
+    "Webhooks for meeting.created, meeting.cancelled, meeting.rescheduled events",
+    "Embeddable booking widget (inline, popup, floating button)",
+    "SSO via Google, GitHub, and generic OAuth 2.0 / OIDC (Keycloak, Authentik, Okta, Azure AD)",
+    "Email delivery via SMTP or Postmark with ICS attachments and reminders",
+    "Optional Stripe Connect payments for paid bookings",
+    "Slack and Telegram booking notifications",
+    "Admin UI for runtime settings (registration, password auth, video transcoding)",
+    "Privacy-first: AES-256-GCM credential encryption, HMAC-signed webhooks, no third-party trackers",
+    "Two booking-page themes (Quill and Rhythm) with dark mode and white-label support",
+    "Multilingual: English, German, Ukrainian, French, Italian",
+    "Cloudron and Railway one-click deployment support"
+  ],
+  "publicApiSurface": [
+    "GET /healthcheck",
+    "GET /free-busy/:token",
+    "POST /webhooks/stripe",
+    "POST /webhooks/stripe/connect",
+    "POST /webhooks/google-calendar",
+    "POST /webhooks/outlook-calendar",
+    "POST /webhooks/outlook-lifecycle",
+    "POST /auth/zoom/deauthorize",
+    "POST /api/telegram/webhook",
+    "GET /api/slack/oauth/start",
+    "GET /api/slack/oauth/callback",
+    "GET /auth/google/callback",
+    "GET /auth/github/callback",
+    "GET /auth/outlook/calendar/callback",
+    "GET /auth/teams/video/callback",
+    "Tymeslot.Webhooks.available_events/0 — meeting.created, meeting.cancelled, meeting.rescheduled",
+    "Tymeslot.Release.promote_admin/1",
+    "Tymeslot.Release.demote_admin/1",
+    "Tymeslot.Release.list_admins/0",
+    "mix tymeslot.promote_admin <email>",
+    "mix tymeslot.demote_admin <email>",
+    "bin/tymeslot rpc 'Tymeslot.Release.promote_admin(\"email\")'",
+    "Webhook payload: {event, timestamp, webhook_id, data: {meeting: {...}}}"
+  ]
+}

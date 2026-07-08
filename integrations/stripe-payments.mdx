@@ -1,0 +1,109 @@
+---
+title: "Collect Meeting Payments via Stripe Connect"
+sidebarTitle: "Stripe Payments"
+description: "Enable optional paid bookings through Stripe Connect. Self-hosters register their own Stripe platform — Tymeslot never holds funds or takes a cut by default."
+---
+
+Tymeslot can collect payment from attendees at the time of booking through **Stripe Connect**. The feature is off by default — self-hosters opt in by registering their own Stripe platform and setting three environment variables. Tymeslot never holds funds: charges flow directly into the connected host's Stripe balance on their existing payout schedule. The platform application fee defaults to 0%, so you take nothing unless you explicitly set one.
+
+<Note>
+  Meeting payments are **disabled by default** on all self-hosted instances. You must set `MEETING_PAYMENTS_ENABLED=true` to enable the feature. There is no platform fee unless you set `MEETING_PAYMENTS_APPLICATION_FEE_BP` to a non-zero value — self-hosters keep 100% of payment revenue by default.
+</Note>
+
+## How it works
+
+1. You register your Tymeslot instance as a Stripe platform (a Stripe Connect platform account).
+2. Hosts on your instance connect their own Stripe account from **Dashboard → Integrations → Payments**.
+3. Hosts enable **Require payment** on any event type they want to charge for, and set the amount and currency.
+4. When a booker completes the booking form, Stripe processes the payment directly.
+5. The charge goes to the host's Stripe balance. If you set a non-zero `MEETING_PAYMENTS_APPLICATION_FEE_BP`, that fraction is retained by the platform account.
+
+## Prerequisites
+
+- A [Stripe](https://stripe.com/) account
+- Stripe Connect enabled on your Stripe account (available in most countries)
+- Your Tymeslot instance registered as a Stripe Connect platform
+
+## Set up Stripe Connect
+
+<Steps>
+  <Step title="Create a Stripe account and enable Connect">
+    If you do not already have one, create a Stripe account at [stripe.com](https://stripe.com/). Once your account is active, ensure **Stripe Connect** is enabled for your account — navigate to the [Connect settings](https://dashboard.stripe.com/settings/connect) in the Stripe Dashboard.
+  </Step>
+
+  <Step title="Register Tymeslot as a Connect platform">
+    In the Stripe Dashboard, go to **Connect → Get started** and complete the platform registration. Your Tymeslot instance acts as the platform that hosts' Stripe accounts connect to.
+
+    Make note of your **Stripe secret key** under **Developers → API keys** — this is your `STRIPE_SECRET_KEY` (format: `sk_live_…` for production or `sk_test_…` for testing).
+  </Step>
+
+  <Step title="Create a Connect webhook endpoint">
+    In the Stripe Dashboard, go to **Developers → Webhooks → Add endpoint**.
+
+    - **Endpoint URL**: `https://your-domain.com/webhooks/stripe/connect`
+    - **Listen to**: *Events on Connected accounts*
+    - Select the relevant Connect events (at minimum: `account.updated`, `payment_intent.succeeded`, `payment_intent.payment_failed`)
+
+    Click **Add endpoint**. Stripe displays the **Signing secret** for this endpoint — copy it immediately. This is your `STRIPE_CONNECT_WEBHOOK_SECRET`.
+  </Step>
+
+  <Step title="Set environment variables">
+    Add these variables to your `.env` file:
+
+    ```bash
+    STRIPE_SECRET_KEY=sk_live_...
+    STRIPE_CONNECT_WEBHOOK_SECRET=whsec_...
+    MEETING_PAYMENTS_ENABLED=true
+    ```
+
+    Optionally, set a platform application fee in basis points (100 basis points = 1%):
+
+    ```bash
+    # Example: 2.5% platform fee
+    MEETING_PAYMENTS_APPLICATION_FEE_BP=250
+    ```
+
+    The valid range is `0`–`10000`. Leave unset or set to `0` for no platform fee.
+
+    Restart Tymeslot for the variables to take effect.
+  </Step>
+
+  <Step title="Verify the feature is active">
+    After restarting, navigate to `/admin` in your Tymeslot instance. The meeting payments toggle should now be enabled. If `STRIPE_SECRET_KEY` or `STRIPE_CONNECT_WEBHOOK_SECRET` is missing, the toggle will remain locked with an explanatory message.
+  </Step>
+</Steps>
+
+## Environment variable reference
+
+| Variable | Required | Description |
+|---|---|---|
+| `MEETING_PAYMENTS_ENABLED` | Yes | Set `true` to enable the payments dashboard and per-event payment toggle. Defaults to `false`. |
+| `STRIPE_SECRET_KEY` | Yes (when enabled) | Your platform's Stripe secret key (`sk_live_…` or `sk_test_…`) |
+| `STRIPE_CONNECT_WEBHOOK_SECRET` | Yes (when enabled) | Signing secret for the Connect webhook endpoint — used to verify connected-account events |
+| `MEETING_PAYMENTS_APPLICATION_FEE_BP` | No | Platform fee in basis points (`100` = 1%). Defaults to `0`. Range: `0`–`10000`. |
+
+## How hosts connect their Stripe account
+
+Once meeting payments are enabled on the instance, each host connects their own Stripe account independently:
+
+1. Go to **Dashboard → Integrations → Payments**.
+2. Click **Connect Stripe account** — this starts the Stripe Connect OAuth flow.
+3. Sign in to Stripe (or create an account) and authorise the connection.
+4. After authorisation, the host is redirected back to Tymeslot with their account connected.
+
+Hosts can then go to any event type and enable **Require payment**, set a price, and choose a currency.
+
+## Charge flow and payouts
+
+Payments are processed as **direct charges** to the connected host's Stripe account. This means:
+
+- Funds appear in the **host's** Stripe balance immediately after the charge succeeds.
+- Payouts to the host's bank follow the host's normal Stripe payout schedule.
+- If `MEETING_PAYMENTS_APPLICATION_FEE_BP` is set to a non-zero value, Stripe retains that fraction in the platform account before settling the remainder to the host.
+- Tymeslot itself never holds or moves funds — it instructs Stripe via the API, and Stripe handles all payment processing, fraud detection, and compliance.
+
+## Test mode
+
+During setup, use a `sk_test_…` key and a Stripe test mode webhook endpoint to verify everything works before going live. Stripe's [test card numbers](https://stripe.com/docs/testing) let you simulate successful and failed payments without real money.
+
+Switch to a `sk_live_…` key and a live-mode webhook endpoint when you are ready to accept real payments.

@@ -1,0 +1,149 @@
+---
+title: "Manage Tymeslot Admins and Runtime Settings"
+sidebarTitle: "Admin"
+description: "Promote and demote Tymeslot admins, access the /admin dashboard, and toggle runtime settings like registration and password auth without redeploying."
+---
+
+Tymeslot ships with a built-in admin UI at `/admin`. From it, an admin can toggle a small set of runtime settings — such as whether new users can register or whether password login is available — without redeploying or restarting the server. This guide explains how admin status works, what you can control from the UI, and how to promote or demote admins in every supported deployment environment.
+
+## How admin status works
+
+Admin access in Tymeslot follows a few important rules:
+
+- The **first user to register** on a fresh install is automatically promoted to admin in the same database transaction as the account insert. This only fires when the `users` table is completely empty.
+- Once any user exists, the auto-promotion gate **closes permanently**. All subsequent admins must be promoted explicitly.
+- Demoting all admins does **not** reopen the gate — you must run the promote task or update the database directly to recover access.
+- On SaaS deployments, the admin UI is disabled at the routing layer and the mix task and release helper refuse to run.
+
+## What you can change from `/admin`
+
+The admin UI lets you change the following runtime settings without a redeploy:
+
+| Setting | What it controls |
+|---|---|
+| `registration_enabled` | Whether new user signups are open. When disabled, the registration form is hidden for all auth methods. |
+| `password_auth_enabled` | Whether the email/password login form is shown. OAuth providers continue to work even when this is disabled. |
+
+### Three-layer precedence
+
+Each setting is resolved in the following order of priority:
+
+1. **DB override** — the value you set from the admin UI (highest priority).
+2. **Application config / environment variable** — what `config.exs` or `runtime.exs` sees at boot.
+3. **Built-in default** — the fallback value when neither of the above is set.
+
+The admin UI shows you the current source for each setting and lets you reset the DB override to fall back to the config or environment layer.
+
+## Promoting and demoting admins
+
+There is one canonical interface for promoting and demoting admins, exposed two ways: a `mix` task for development installs, and a release RPC call for all packaged production environments (Docker, Cloudron, Railway, and so on). The user account must already exist before you run either command — these commands do not create accounts.
+
+<Tabs>
+  <Tab title="Development">
+    If you cloned the repo and run via `mix phx.server`, use the mix tasks directly:
+
+    ```bash
+    # Promote
+    mix tymeslot.promote_admin you@example.com
+
+    # Demote
+    mix tymeslot.demote_admin you@example.com
+    ```
+
+    The mix task delegates to `Tymeslot.Release.promote_admin/1`, so the behaviour is identical to the production path.
+  </Tab>
+
+  <Tab title="Docker">
+    Find the running container's name (commonly `tymeslot`), then use `docker exec`:
+
+    ```bash
+    # Promote
+    docker exec -it tymeslot bin/tymeslot rpc 'Tymeslot.Release.promote_admin("you@example.com")'
+
+    # Demote
+    docker exec -it tymeslot bin/tymeslot rpc 'Tymeslot.Release.demote_admin("you@example.com")'
+
+    # List current admins
+    docker exec -it tymeslot bin/tymeslot rpc 'Tymeslot.Release.list_admins()'
+    ```
+
+    If you started the container under a different name, replace `tymeslot` with that name. When Docker Compose is in use, substitute `docker compose exec tymeslot` for `docker exec -it tymeslot`.
+  </Tab>
+
+  <Tab title="Cloudron">
+    Cloudron provides a web terminal for every installed app. From the Cloudron dashboard, open the Tymeslot app tile and click **Terminal**, then run:
+
+    ```bash
+    # Promote
+    bin/tymeslot rpc 'Tymeslot.Release.promote_admin("you@example.com")'
+
+    # Demote
+    bin/tymeslot rpc 'Tymeslot.Release.demote_admin("you@example.com")'
+
+    # List current admins
+    bin/tymeslot rpc 'Tymeslot.Release.list_admins()'
+    ```
+
+    Alternatively, run the same commands remotely from your workstation using the Cloudron CLI:
+
+    ```bash
+    # Promote
+    cloudron exec --app tymeslot.yourdomain.com -- bin/tymeslot rpc 'Tymeslot.Release.promote_admin("you@example.com")'
+
+    # Demote
+    cloudron exec --app tymeslot.yourdomain.com -- bin/tymeslot rpc 'Tymeslot.Release.demote_admin("you@example.com")'
+    ```
+  </Tab>
+
+  <Tab title="Railway">
+    Railway runs the same release artifact as Docker. Use Railway's CLI or the dashboard's web shell:
+
+    ```bash
+    # Promote
+    railway run bin/tymeslot rpc 'Tymeslot.Release.promote_admin("you@example.com")'
+
+    # Demote
+    railway run bin/tymeslot rpc 'Tymeslot.Release.demote_admin("you@example.com")'
+    ```
+
+    If you prefer the web shell in the Railway dashboard, paste the same command directly into it.
+  </Tab>
+</Tabs>
+
+## Listing current admins
+
+To see which accounts currently hold admin status, run the `list_admins` helper from inside your running container or environment. Using Docker as an example:
+
+```bash
+docker exec -it tymeslot bin/tymeslot rpc 'Tymeslot.Release.list_admins()'
+```
+
+The same `list_admins()` call works identically across Cloudron, Railway, and any environment that runs the packaged release.
+
+## Last-resort recovery
+
+<Accordion title="Recover admin access via direct SQL">
+
+  If you have lost access to the mix task and release CLI — for example, because every admin password is forgotten and no admins remain — you can promote an account directly via SQL:
+
+  ```sql
+  UPDATE users SET is_admin = true WHERE email = 'you@example.com';
+  ```
+
+  <Warning>
+    This is intentionally not the recommended path. Use it **only** when the release helpers are completely unreachable. Every other recovery scenario is covered by the `promote_admin` commands documented above.
+  </Warning>
+
+  To execute the query, connect to your PostgreSQL instance directly. On Docker:
+
+  ```bash
+  docker exec -it tymeslot psql -U tymeslot tymeslot
+  ```
+
+  On Cloudron:
+
+  ```bash
+  cloudron exec --app tymeslot.yourdomain.com -- psql $CLOUDRON_POSTGRESQL_URL
+  ```
+
+</Accordion>

@@ -1,20 +1,68 @@
 ---
-title: "Introduction"
-description: "Welcome to your project"
+title: "Tymeslot: Open-Source Scheduling That Stays Yours"
+sidebarTitle: "Home"
+description: "Tymeslot is a self-hostable meeting scheduling platform built on Elixir/Phoenix LiveView. Run it on your server with Docker, or use the managed cloud at tymeslot.app."
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+Tymeslot gives you booking pages, two-way calendar sync, video room creation, embeddable widgets, and automated emails — all running on your own infrastructure under the AGPLv3 licence. It's the same codebase that powers [tymeslot.app](https://tymeslot.app), so what you self-host is what paying cloud customers use in production.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+<CardGroup cols={2}>
+  <Card title="Docker Quickstart" icon="docker" href="/quickstart-docker">
+    Get a full Tymeslot instance running in one command with embedded PostgreSQL.
+  </Card>
+  <Card title="Cloudron" icon="cloud" href="/quickstart-cloudron">
+    One-click install on Cloudron with automatic SSL, updates, and backups.
+  </Card>
+  <Card title="Railway" icon="train" href="/quickstart-railway">
+    Deploy to Railway's managed cloud infrastructure in minutes.
+  </Card>
+  <Card title="Configuration Reference" icon="sliders" href="/configuration/environment-variables">
+    All environment variables — SMTP, OAuth, database, encryption, and more.
+  </Card>
+</CardGroup>
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+## What's included
+
+Every feature ships in the box — no add-ons, no per-feature upsells.
+
+<CardGroup cols={3}>
+  <Card title="Calendar Sync" icon="calendar-days" href="/integrations/google">
+    Two-way sync with Google Calendar, Outlook, Apple iCloud, and any CalDAV server.
+  </Card>
+  <Card title="Video Rooms" icon="video" href="/integrations/video">
+    Auto-create Google Meet, Teams, Zoom, or MiroTalk rooms on booking.
+  </Card>
+  <Card title="Webhooks" icon="webhook" href="/developer/webhooks">
+    Fire meeting events to n8n, Zapier, Make, or your own backend.
+  </Card>
+  <Card title="Embed Widget" icon="code" href="/developer/embed">
+    Inline, popup, or floating button — paste one snippet anywhere.
+  </Card>
+  <Card title="SSO & OAuth" icon="key" href="/auth/overview">
+    Google, GitHub, and generic OIDC for Keycloak, Authentik, Okta, Azure AD.
+  </Card>
+  <Card title="Stripe Payments" icon="credit-card" href="/integrations/stripe-payments">
+    Optional paid bookings via Stripe Connect — fee-free for self-hosters.
+  </Card>
+</CardGroup>
+
+## Deploy your way
+
+<Steps>
+  <Step title="Pick a deployment method">
+    Run the Docker image on any VPS, install on Cloudron, deploy to Railway, or sign up for the managed cloud at [tymeslot.app](https://tymeslot.app).
+  </Step>
+  <Step title="Set required environment variables">
+    At minimum you need `SECRET_KEY_BASE`, `PHX_HOST`, and `POSTGRES_PASSWORD`. Everything else has sensible defaults. See the [Environment Variables](/configuration/environment-variables) reference.
+  </Step>
+  <Step title="Configure email">
+    Set `EMAIL_ADAPTER=smtp` or `EMAIL_ADAPTER=postmark` so booking confirmations, reminders, and password resets are delivered. See [Email Configuration](/configuration/email).
+  </Step>
+  <Step title="Connect your calendars and video">
+    Link Google Calendar, Outlook, CalDAV, and a video provider from the dashboard. Follow the [Integrations](/integrations/google) guides for OAuth app setup.
+  </Step>
+</Steps>
+
+<Note>
+  The first account you create on a fresh install is automatically promoted to admin and gains access to `/admin`. See [Admin Management](/operations/admin) for promoting additional admins.
+</Note>

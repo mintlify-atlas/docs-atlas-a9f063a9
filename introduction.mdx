@@ -1,0 +1,118 @@
+---
+title: "Tymeslot: Self-Hosted Scheduling for Developers"
+sidebarTitle: "Introduction"
+description: "Tymeslot is an open-source, AGPLv3-licensed meeting scheduling platform. Self-host on Docker, Cloudron, or Railway, or use the managed cloud."
+---
+
+Tymeslot is an open-source meeting scheduling platform — booking pages, calendar sync, video rooms, webhooks, and automated email — that runs entirely on your own server, under your control. It's the engine behind [tymeslot.app](https://tymeslot.app), the managed cloud offering, which means the code you self-host is the exact same codebase running in production for paying customers. New releases ship regularly, and the source stays public and self-hostable under the [GNU AGPLv3](https://www.gnu.org/licenses/agpl-3.0.html) — a direct answer to scheduling tools that have closed their source or relicensed away from open source.
+
+## Pick your deployment path
+
+<CardGroup cols={2}>
+  <Card title="Docker" icon="docker" href="/quickstart-docker">
+    Single container with embedded PostgreSQL. The fastest way to get a production instance running on any Linux server — one `docker run` command and you're live.
+  </Card>
+  <Card title="Cloudron" icon="cloud" href="/quickstart-cloudron">
+    Install via Cloudron's community package for automatic SSL, one-click updates, built-in backups, and zero server management overhead.
+  </Card>
+  <Card title="Railway" icon="train-track" href="/quickstart-railway">
+    One-click deploy on Railway's managed infrastructure. Automatic SSL, built-in PostgreSQL plugin, and no server to maintain.
+  </Card>
+  <Card title="Managed Cloud" icon="stars" href="https://tymeslot.app">
+    Zero setup. Free plan included; upgrade to Pro for €9/mo. The same codebase, fully managed by the Tymeslot team at Diletta Luna OÜ.
+  </Card>
+</CardGroup>
+
+## What's in the box
+
+Everything ships as a single release — no add-ons, no per-feature upsells.
+
+<CardGroup cols={3}>
+  <Card title="Booking pages" icon="calendar-check">
+    Public scheduling pages with customisable availability rules: working hours, date overrides, holiday blocks, per-meeting buffers, booking windows, and minimum notice periods.
+  </Card>
+  <Card title="Calendar sync" icon="arrows-rotate">
+    Bi-directional sync with every connected calendar. Conflicts are checked across all calendars the moment someone books — no double-booking possible.
+  </Card>
+  <Card title="Video rooms" icon="video">
+    Auto-create a meeting room when a booking is confirmed. Supports Google Meet, Microsoft Teams, Zoom, MiroTalk P2P, in-person/phone, and custom links.
+  </Card>
+  <Card title="Webhooks" icon="webhook">
+    `meeting_created`, `meeting_cancelled`, and `meeting_rescheduled` events delivered with HMAC signatures. Plug straight into n8n, Zapier, Make, or your own backend.
+  </Card>
+  <Card title="Embed widget" icon="code">
+    Inline, popup, or floating-button embeds. Paste one snippet on your site. Tokens are signed and domain-locked so the widget only runs where you put it.
+  </Card>
+  <Card title="SSO & social login" icon="key">
+    Email/password, Google, GitHub, plus generic OAuth 2.0/OIDC for Keycloak, Authentik, Okta, Azure AD, and any OIDC-compliant provider. Disable registration or password login independently.
+  </Card>
+  <Card title="Automated email" icon="envelope">
+    Responsive templates, `.ics` attachments on every send, configurable reminders, and signed cancel/reschedule links that need no login.
+  </Card>
+  <Card title="Custom questions" icon="list-check">
+    Add questions to any meeting type so you walk into every call already briefed — no follow-up messages required.
+  </Card>
+  <Card title="Payments" icon="credit-card">
+    Optional paid bookings through Stripe Connect. Off by default — opt in by registering your own Stripe platform. Tymeslot takes no cut unless you set one.
+  </Card>
+</CardGroup>
+
+## Supported calendars
+
+Tymeslot syncs availability and writes confirmed meetings back — both ways — with every major calendar provider.
+
+| Provider | Protocol |
+|---|---|
+| Google Calendar | Google Calendar API |
+| Outlook / Microsoft 365 | Microsoft Graph API |
+| Apple iCloud | CalDAV |
+| Nextcloud | CalDAV |
+| Radicale | CalDAV |
+| Zimbra | CalDAV |
+| Baikal | CalDAV |
+| mailbox.org | CalDAV |
+
+Any server that speaks standard CalDAV — including self-hosted instances — works out of the box.
+
+## Supported video providers
+
+| Provider | How it works |
+|---|---|
+| Google Meet | Auto-creates a Meet room via API on booking confirmation |
+| Microsoft Teams | Auto-creates a Teams meeting via Microsoft Graph |
+| Zoom | Auto-creates a Zoom meeting via Zoom API |
+| MiroTalk P2P | Generates a room link on your own MiroTalk instance |
+| In person / phone | Free-text location field |
+| Custom link | Any static URL you provide |
+
+## Deployment options
+
+| Method | Guide | Best for |
+|---|---|---|
+| **Docker** | [Quickstart →](/quickstart-docker) | Any Linux server; embedded PostgreSQL included |
+| **Cloudron** | [Quickstart →](/quickstart-cloudron) | One-click install, automatic updates, zero server ops |
+| **Railway** | [Quickstart →](/quickstart-railway) | Managed cloud, no server to maintain |
+| **Managed Cloud** | [tymeslot.app](https://tymeslot.app) | Zero setup, free plan, priority support |
+
+## Tech stack
+
+Tymeslot is built on a small set of mature, production-proven technologies:
+
+| Component | Version |
+|---|---|
+| Elixir | 1.20 |
+| Erlang/OTP | 28 |
+| Phoenix Framework | 1.8 |
+| Phoenix LiveView | 1.1 |
+| PostgreSQL | 14+ |
+| Oban | Background jobs |
+| Tailwind CSS | UI |
+| Swoosh + MJML | Email delivery |
+
+The Elixir/OTP runtime gives Tymeslot low memory usage and fault-tolerant concurrency — the scheduler keeps running even when individual processes crash, and it starts up fast enough to run comfortably on a 500 MB VPS.
+
+## Licence
+
+Tymeslot is open source under the [GNU AGPLv3](https://www.gnu.org/licenses/agpl-3.0.html). You're free to use it, self-host it, modify it, and redistribute it. If you run a modified version as a network service, the AGPLv3 requires you to share your changes under the same licence.
+
+The licence covers the **code**. The **Tymeslot name and logo** are trademarks of Diletta Luna OÜ — forks are welcome but must travel under their own name.

@@ -1,0 +1,294 @@
+---
+title: "Contribute to Tymeslot"
+sidebarTitle: "Contributing"
+description: "Report bugs, submit pull requests, add themes, integrations, or translations. Start with CONTRIBUTING.md, set up the Elixir/Phoenix dev environment, and follow code standards."
+---
+
+Tymeslot is open source under the [GNU AGPLv3](https://www.gnu.org/licenses/agpl-3.0.html) and actively welcomes contributions. The code you self-host is the same code that runs in production at [tymeslot.app](https://tymeslot.app) — so every improvement benefits both self-hosters and cloud users. Whether you fix a bug, add a theme, improve a translation, or write a test, your work matters.
+
+## Types of contributions
+
+<CardGroup cols={2}>
+  <Card title="🐛 Bug fixes" icon="bug">
+    Squash reproducible bugs and improve stability. Open an issue first so we can confirm the behaviour before you start.
+  </Card>
+  <Card title="✨ New features" icon="sparkles">
+    Add functionality that benefits users. For large features, open a GitHub Discussion first to align on scope.
+  </Card>
+  <Card title="📚 Documentation" icon="book">
+    Improve guides, API docs, and in-code documentation. Small docs fixes don't need a prior issue.
+  </Card>
+  <Card title="🧪 Testing" icon="flask">
+    Add test coverage and improve test quality. Every new public context function, LiveView event, and Oban worker must have tests.
+  </Card>
+  <Card title="🎨 Themes" icon="palette">
+    Create new booking page themes. See the [Themes guide](/developer/themes) for the full architecture and required file structure.
+  </Card>
+  <Card title="🔌 Integrations" icon="plug">
+    Add support for new calendar or video providers. Follow the provider behaviour pattern and use `Req` as the HTTP client.
+  </Card>
+  <Card title="🚀 Performance" icon="gauge">
+    Optimise queries, reduce LiveView assigns, improve caching. Include benchmark numbers in your PR description.
+  </Card>
+  <Card title="🔒 Security" icon="shield">
+    Enhance security measures. Report vulnerabilities **privately** via [tymeslot.app/contact](https://tymeslot.app/contact) — never in a public issue.
+  </Card>
+</CardGroup>
+
+## Development setup
+
+<Steps>
+  <Step title="Install prerequisites">
+    You need:
+    - **Elixir ~> 1.20** with Erlang/OTP 28.3.3+
+    - **PostgreSQL 14+**
+    - **Node.js 18+** (for asset compilation and MJML email templates)
+    - **Git**
+
+    Check your versions:
+
+    ```bash
+    elixir --version
+    psql --version
+    node --version
+    ```
+  </Step>
+  <Step title="Fork and clone">
+    Fork the repository on GitHub, then clone your fork:
+
+    ```bash
+    git clone https://github.com/your-username/tymeslot.git
+    cd tymeslot
+    ```
+  </Step>
+  <Step title="Configure environment">
+    Copy the example environment file and fill in the required values (database URL, secret key base):
+
+    ```bash
+    cp .env.example .env
+    ```
+
+    For testing OAuth and calendar integrations, you'll also need credentials from:
+    - **Google**: [Google Cloud Console](https://console.cloud.google.com/)
+    - **GitHub**: [GitHub Developer Settings](https://github.com/settings/developers)
+    - **Microsoft**: [Azure App Registration](https://portal.azure.com/)
+
+    See [README-Docker.md](https://github.com/Tymeslot/tymeslot/blob/main/README-Docker.md#oauth-provider-setup) for the exact redirect URIs and API permissions required.
+  </Step>
+  <Step title="Install dependencies and set up the database">
+    `mix setup` installs Elixir and Node.js dependencies, creates and migrates the database, and seeds initial data:
+
+    ```bash
+    mix setup
+    ```
+  </Step>
+  <Step title="Start the development server">
+    ```bash
+    mix phx.server
+    ```
+
+    Open [http://localhost:4000](http://localhost:4000). The first account you create becomes the admin.
+  </Step>
+</Steps>
+
+## Running tests
+
+```bash
+# Run the full test suite
+mix test
+
+# Run with coverage
+mix test --cover
+
+# Run a specific file
+mix test apps/tymeslot/test/tymeslot/webhooks/webhooks_test.exs
+
+# Run a single test by line number
+mix test apps/tymeslot/test/tymeslot/webhooks/webhooks_test.exs:42
+
+# Run only Elixir tests (skip JavaScript)
+mix test.elixir
+```
+
+Every test module must declare at least one `@moduletag` from the approved taxonomy in `test/support/tag_taxonomy.ex`. Domain tags include `:auth`, `:availability`, `:bookings`, `:calendar`, `:meetings`, `:notifications`, `:security`, `:webhooks`, and more. Web layer tags include `:live`, `:controllers`, `:components`. Test type tags include `:unit`, `:integration`, `:schema`, `:queries`.
+
+## Code standards
+
+All four checks must pass before a PR can be merged:
+
+```bash
+mix test                      # 0 failures
+mix credo --strict            # all issues resolved
+mix dialyzer                  # no warnings
+mix format --check-formatted  # properly formatted
+```
+
+Run `mix format` to auto-format your code before committing.
+
+### Key patterns
+
+Tymeslot follows a domain-driven module structure. Each domain owns its schemas, queries, and logic under one namespace.
+
+**Repository pattern** — all `Repo` calls live in `*_queries.ex` files:
+
+```elixir
+# Good — query module owns all Repo calls
+Tymeslot.Auth.UserQueries.find_by_email(email)
+
+# Avoid — bypasses the query module boundary
+Repo.get_by(User, email: email)
+```
+
+Only `Repo.transaction`, `Repo.rollback`, and `Repo.preload` are permitted in domain context modules.
+
+**HEEx comments only** — use `<%!-- --%>` in `.heex` files and `~H` sigils. Never use HTML comments (`<!-- -->`); they are sent to the browser.
+
+**No queries in `mount/3`** — defer data loading to `handle_params/3` to avoid double-loading on LiveView reconnects.
+
+**Background jobs via Oban** — never use raw `spawn/1` or `Task.async/1` for async work; always schedule an Oban job.
+
+**HTTP client** — use `Req` for all outbound HTTP calls. Do not add `:httpoison`, `:tesla`, or `:httpc`.
+
+### Module structure
+
+```
+lib/tymeslot/
+├── auth/                     # Authentication domain
+│   ├── auth.ex               # Public context API
+│   ├── user_schema.ex        # Ecto schema
+│   └── user_queries.ex       # Database queries
+├── availability/             # Availability calculation domain
+├── bookings/                 # Meeting booking domain
+├── integrations/             # External service integrations
+├── meetings/                 # Meeting management domain
+├── notifications/            # Email and notification system
+├── security/                 # Security and validation
+└── workers/                  # Oban background workers
+```
+
+## Signing off commits (DCO)
+
+Tymeslot uses the [Developer Certificate of Origin](https://github.com/Tymeslot/tymeslot/blob/main/DCO). **Every commit must be signed off.** Add the sign-off automatically with the `-s` flag:
+
+```bash
+git commit -s -m "feat(webhooks): add delivery retry backoff"
+```
+
+This appends a `Signed-off-by:` line to your commit message using your configured Git name and email. Use your real name and a reachable email address. PRs are only merged once all commits are signed off.
+
+To sign off commits you have already made:
+
+```bash
+# Amend the most recent commit
+git commit --amend -s
+
+# Sign off multiple commits
+git rebase --signoff <base-branch>
+```
+
+## Pull request process
+
+### Branch naming
+
+```
+feature/add-teams-video-integration
+fix/calendar-sync-timezone-bug
+docs/improve-oauth-setup-guide
+refactor/simplify-availability-calculation
+```
+
+### Commit messages
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+feat(auth): add GitHub OAuth integration
+fix(calendar): resolve timezone conversion bug
+docs(readme): update installation instructions
+test(webhooks): add delivery failure tests
+refactor(themes): extract shared wrapper helpers
+```
+
+The changelog is auto-generated from `feat` and `fix` commits. To exclude a commit (e.g. an internal test fix), add a `Changelog: skip` footer:
+
+```
+fix(core): unwrap tuple in OAuth session test
+
+Changelog: skip
+Signed-off-by: Your Name <you@example.com>
+```
+
+### PR checklist
+
+Before submitting:
+
+- [ ] `mix format --check-formatted` passes
+- [ ] `mix test` passes (0 failures)
+- [ ] `mix credo --strict` passes
+- [ ] `mix dialyzer` passes
+- [ ] New functionality includes tests with `@moduletag` declarations
+- [ ] Documentation is updated if behaviour changes
+- [ ] Security implications are addressed
+- [ ] All commits are signed off (`git commit -s`)
+
+For large changes — new features, significant refactors, new integrations — open an issue or GitHub Discussion first to align before writing code.
+
+## Reporting issues
+
+### Bug reports
+
+Include:
+1. A clear, specific title
+2. Steps to reproduce
+3. Expected vs. actual behaviour
+4. Environment details (OS, Elixir version, Tymeslot version, browser)
+5. Relevant error logs or screenshots
+6. A minimal reproduction case if possible
+
+### Helping debug issues
+
+If you self-host Tymeslot, you can enable **admin alerts** to receive structured email reports when something breaks (failed webhooks, calendar sync errors, stuck Oban queues):
+
+```bash
+ADMIN_ALERTS_ENABLED=true
+ADMIN_ALERT_EMAIL=you@example.com
+```
+
+Both variables must be set. Alerts are deduplicated within a 24-hour window so you won't be flooded by a tight error loop.
+
+To share an alert with the project, open a GitHub issue at [github.com/Tymeslot/tymeslot/issues](https://github.com/Tymeslot/tymeslot/issues) and paste the report. **Redact sensitive values** (user IDs, email addresses, internal hostnames) before posting publicly.
+
+## Contributor licence
+
+By submitting a contribution you agree that:
+
+1. **You have the right to submit it.** The work is your original creation or you otherwise have the legal right to submit it.
+2. **You grant a broad licence.** You grant Diletta Luna OÜ a perpetual, worldwide, non-exclusive, royalty-free, irrevocable licence to use, reproduce, modify, and distribute your contribution under any licensing terms.
+3. **You retain your copyright.** You keep ownership; this is a licence grant, not an assignment.
+
+This is a DCO-based process — not a CLA. Sign off each commit with `git commit -s` to make the certification.
+
+<Warning>
+  **Security vulnerabilities** must be reported **privately** via [tymeslot.app/contact](https://tymeslot.app/contact). Do not open a public GitHub issue for security bugs.
+</Warning>
+
+## Licence
+
+Tymeslot Core is distributed under the [GNU AGPLv3](https://www.gnu.org/licenses/agpl-3.0.html). Contributions are made available under the same licence. If you run a modified version as a network service, you must make your source changes available under the AGPLv3.
+
+The **Tymeslot name and logo** are trademarks of Diletta Luna OÜ. Forks are welcome but must use their own name.
+
+## Community and getting help
+
+- **[GitHub Issues](https://github.com/Tymeslot/tymeslot/issues)** — bug reports and feature requests
+- **[GitHub Discussions](https://github.com/Tymeslot/tymeslot/discussions)** — questions, ideas, and design conversations
+- **[Security contact](https://tymeslot.app/contact)** — for private vulnerability reports only
+
+### Useful references
+
+- [Elixir Getting Started](https://elixir-lang.org/getting-started/introduction.html)
+- [Phoenix Guides](https://hexdocs.pm/phoenix/overview.html)
+- [LiveView Guide](https://hexdocs.pm/phoenix_live_view/Phoenix.LiveView.html)
+- [Ecto Guide](https://hexdocs.pm/ecto/Ecto.html)
+- [CONTRIBUTING.md](https://github.com/Tymeslot/tymeslot/blob/main/CONTRIBUTING.md) — the canonical contributing guide in the repo
+- [THEME_DEVELOPMENT_GUIDE.md](https://github.com/Tymeslot/tymeslot/blob/main/docs/THEME_DEVELOPMENT_GUIDE.md) — full theme creation reference

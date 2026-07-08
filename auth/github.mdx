@@ -1,0 +1,98 @@
+---
+title: "Enable GitHub Login for Tymeslot"
+sidebarTitle: "GitHub OAuth"
+description: "Let users sign in with their GitHub account. Create a GitHub OAuth App, set callback URL, and configure GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET."
+---
+
+Tymeslot supports GitHub as a social login provider, letting users register and sign in with their existing GitHub account instead of creating a separate email/password. This is purely a login mechanism — it is separate from any calendar or video integration and does not require any other GitHub-related features to be enabled.
+
+## Prerequisites
+
+- A GitHub account with access to **Settings → Developer settings → OAuth Apps**.
+- Your Tymeslot instance must be reachable at a stable URL so GitHub can redirect back after authentication (localhost works for local testing).
+
+## Create the GitHub OAuth App
+
+<Steps>
+  <Step title="Open OAuth App registration">
+    In GitHub, go to **Settings → Developer settings → OAuth Apps** and click **New OAuth App**.
+  </Step>
+
+  <Step title="Fill in application details">
+    Enter the following values exactly:
+
+    | Field | Value |
+    |---|---|
+    | Application name | `Tymeslot` |
+    | Homepage URL | `https://your-domain.com` |
+    | Authorization callback URL | `https://your-domain.com/auth/github/callback` |
+
+    Replace `your-domain.com` with the actual hostname you have set in `PHX_HOST`. The callback URL must match exactly — a trailing slash or wrong scheme will cause authentication failures.
+  </Step>
+
+  <Step title="Register the app and copy credentials">
+    Click **Register application**. On the next screen, copy the **Client ID** shown at the top.
+
+    Then click **Generate a new client secret**, confirm your password if prompted, and immediately copy the secret value. GitHub will not show it again after you navigate away.
+  </Step>
+
+  <Step title="Set environment variables">
+    Add the following to your `.env` file (or pass them as Docker environment variables):
+
+    ```bash
+    GITHUB_CLIENT_ID=<your_github_client_id>
+    GITHUB_CLIENT_SECRET=<your_github_client_secret>
+    ENABLE_GITHUB_AUTH=true
+    ```
+
+    `ENABLE_GITHUB_AUTH=true` is what activates the **Sign in with GitHub** button on the login page. Without it, the credentials are present but the login option will not appear even if the variables are set.
+  </Step>
+
+  <Step title="Restart Tymeslot">
+    Environment variables are read at boot. Restart your container (or process) to apply the changes:
+
+    ```bash
+    docker restart tymeslot
+    ```
+
+    The GitHub login option will appear on the `/login` page immediately after the server comes back up.
+  </Step>
+</Steps>
+
+## Environment variables reference
+
+<ParamField body="GITHUB_CLIENT_ID" type="string" required>
+  The Client ID from your GitHub OAuth App. Displayed on the app's overview page in GitHub Developer Settings.
+</ParamField>
+
+<ParamField body="GITHUB_CLIENT_SECRET" type="string" required>
+  The Client Secret generated in GitHub Developer Settings. Store this securely — treat it like a password.
+</ParamField>
+
+<ParamField body="ENABLE_GITHUB_AUTH" type="boolean" default="false">
+  Set to `true` to display the **Sign in with GitHub** button and allow users to authenticate via GitHub. Defaults to `false` — the credentials above have no effect unless this is enabled.
+</ParamField>
+
+## Callback URL
+
+The authorization callback URL you registered with GitHub must match the path Tymeslot expects:
+
+```
+https://your-domain.com/auth/github/callback
+```
+
+If you are running locally without HTTPS, use `http://localhost:4000/auth/github/callback` and make sure the GitHub OAuth App's callback is set to the same value.
+
+<Warning>
+  If the callback URL registered in GitHub does not exactly match `PHX_HOST` (including scheme), GitHub will return an error and authentication will fail. Double-check that the URL in your GitHub OAuth App settings and `PHX_HOST` are consistent.
+</Warning>
+
+## GitHub login vs. calendar integrations
+
+GitHub login is only for identity — it lets a user prove who they are and get a Tymeslot session. It has no relationship to calendar sync or video conferencing:
+
+- Enabling `ENABLE_GITHUB_AUTH` does **not** grant Tymeslot access to any GitHub repository data.
+- Disabling `ENABLE_GITHUB_AUTH` has no effect on Google Calendar, Outlook Calendar, or any other integration.
+- Users who signed up via GitHub and also connect Google Calendar are using two separate OAuth flows that do not interfere with each other.
+
+The scope requested from GitHub during login is `user:email` — the minimum needed to retrieve the user's verified email address for account creation.

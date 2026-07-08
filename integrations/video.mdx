@@ -1,0 +1,147 @@
+---
+title: "Video Conferencing Integrations for Tymeslot"
+sidebarTitle: "Video"
+description: "Auto-create video rooms on booking with Google Meet, Microsoft Teams, Zoom, or MiroTalk. Each provider requires an OAuth app or API credentials."
+---
+
+When a booking is confirmed, Tymeslot can automatically create a video room and embed the join link in the calendar event and confirmation email — no copy-pasting meeting URLs between apps. Each event type can be configured with a different video provider, and hosts can connect multiple providers to their account and choose per event type.
+
+Tymeslot supports five video providers: three OAuth-based cloud services (Google Meet, Microsoft Teams, Zoom), one self-hosted option (MiroTalk P2P), and a static custom link for any provider not listed. In-person and phone meetings are also supported — no video room is created, and the location is shown to the attendee in the confirmation.
+
+## Supported providers
+
+<CardGroup cols={3}>
+  <Card title="Google Meet" icon="video">
+    Full OAuth integration. Rooms are created automatically via the Google Meet API. Covered by the same Google OAuth app as Google Calendar — no separate credential setup.
+  </Card>
+  <Card title="Microsoft Teams" icon="microsoft">
+    Enterprise OAuth integration. Teams meetings are created via Microsoft Graph. Covered by the same Azure AD app as Outlook Calendar — no separate credential setup.
+  </Card>
+  <Card title="Zoom" icon="video">
+    OAuth integration via a Zoom Marketplace app. Requires `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, `ZOOM_STATE_SECRET`, and `ZOOM_DEAUTH_SECRET`.
+  </Card>
+  <Card title="MiroTalk P2P" icon="server">
+    Self-hosted peer-to-peer video. Users provide their MiroTalk server URL and API key in the dashboard. No cloud account needed.
+  </Card>
+  <Card title="Custom Link" icon="link">
+    A static meeting URL for any provider not listed (Jitsi Meet, BigBlueButton, etc.). No API integration — the URL is shown as-is to attendees.
+  </Card>
+  <Card title="In-person / Phone" icon="map-pin">
+    No video room is created. The address or phone number you set on the event type is shown to the attendee in the confirmation email and calendar event.
+  </Card>
+</CardGroup>
+
+## Google Meet
+
+Google Meet is set up as part of the Google integration — the same Google Cloud OAuth app that powers Google Calendar also provides access to the Meet API. There are no additional environment variables for Meet specifically.
+
+See the [Google integration guide](/integrations/google) for the full OAuth app setup walkthrough.
+
+## Microsoft Teams
+
+Microsoft Teams is set up as part of the Microsoft integration — the same Azure AD app registration that powers Outlook Calendar also creates Teams meetings via Microsoft Graph. There are no additional environment variables for Teams specifically.
+
+See the [Microsoft integration guide](/integrations/microsoft) for the full Azure app registration walkthrough.
+
+## Zoom
+
+Zoom requires its own Marketplace app and three environment variables. The deauthorisation webhook variable (`ZOOM_DEAUTH_SECRET`) is additionally required for Zoom's mandatory app deauthorisation callback — Zoom calls `POST /auth/zoom/deauthorize` when a user disconnects the app from their Zoom account, and the secret is used to verify the request signature.
+
+<Steps>
+  <Step title="Create a Zoom Marketplace app">
+    Go to [marketplace.zoom.us](https://marketplace.zoom.us/) and sign in. Navigate to **Develop → Build App**.
+
+    Choose **OAuth** as the app type and click **Create**.
+  </Step>
+
+  <Step title="Configure the OAuth app">
+    Fill in the app information:
+
+    - **App Name**: `Tymeslot`
+    - **App Type**: User-managed
+    - Under **OAuth Information**, add the redirect URL:
+      ```
+      https://your-domain.com/auth/zoom/video/callback
+      ```
+    - Copy the **Client ID** and **Client Secret** from the app credentials page.
+  </Step>
+
+  <Step title="Add required scopes">
+    Under **Scopes**, add the following:
+
+    - `meeting:write` (classic scope) **or** `meeting:write:meeting` (granular scope)
+    - `meeting:read` / `meeting:read:meeting` — for verifying meetings after creation
+
+    Tymeslot accepts both classic and granular scope formats. If your Marketplace app was created before Zoom introduced granular scopes, the classic `meeting:write` scope is sufficient.
+  </Step>
+
+  <Step title="Configure Event Subscriptions and the deauth endpoint">
+    Under **Features → Event Subscriptions**, enable subscriptions and add a subscription.
+
+    Set the **Event notification endpoint URL** to:
+
+    ```
+    https://your-domain.com/auth/zoom/deauthorize
+    ```
+
+    Subscribe to the **App Deauthorized** event. After saving, Zoom shows a **Secret Token** — copy it. This is your `ZOOM_DEAUTH_SECRET`.
+  </Step>
+
+  <Step title="Set environment variables">
+    Add these variables to your `.env` file:
+
+    ```bash
+    ZOOM_CLIENT_ID=<your_zoom_client_id>
+    ZOOM_CLIENT_SECRET=<your_zoom_client_secret>
+    ZOOM_STATE_SECRET=<random_string_you_generate>
+    ZOOM_DEAUTH_SECRET=<secret_token_from_event_subscriptions>
+    ```
+
+    Generate `ZOOM_STATE_SECRET` yourself — it is a self-generated random string for CSRF protection, not provided by Zoom:
+
+    ```bash
+    openssl rand -base64 32 | tr -d '\n'
+    ```
+
+    Restart Tymeslot for the variables to take effect.
+  </Step>
+</Steps>
+
+### Zoom environment variable reference
+
+| Variable | Required | Description |
+|---|---|---|
+| `ZOOM_CLIENT_ID` | Yes | OAuth Client ID from the Zoom Marketplace app |
+| `ZOOM_CLIENT_SECRET` | Yes | OAuth Client Secret from the Zoom Marketplace app |
+| `ZOOM_STATE_SECRET` | Yes | Self-generated random string for CSRF protection |
+| `ZOOM_DEAUTH_SECRET` | Yes | Secret Token from Zoom Event Subscriptions (verifies deauth webhook signatures) |
+
+## MiroTalk P2P
+
+MiroTalk P2P is a self-hosted, browser-based, end-to-end encrypted video server. Because it is self-hosted, there is no OAuth app to register and no cloud account needed. Users provide their MiroTalk server URL and API key directly in the Tymeslot dashboard under **Dashboard → Integrations → Video → Connect MiroTalk**.
+
+Tymeslot connects to your MiroTalk instance's REST API (`POST /api/v1/meeting`) to create rooms automatically on booking confirmation.
+
+If your MiroTalk server is on a private or loopback address (e.g. `http://192.168.1.100:3000`), add this to your `.env`:
+
+```bash
+ALLOW_PRIVATE_IPS_FOR_CALENDAR=true
+```
+
+This flag covers both CalDAV and self-hosted video integrations such as MiroTalk.
+
+## Custom link
+
+The **Custom Video Link** option accepts a static URL for any video platform not covered by the above integrations — Jitsi Meet, BigBlueButton, whereby.com, or any other service that provides a fixed meeting room URL. Tymeslot passes the URL through unchanged to attendees; no API call is made at booking time.
+
+Users configure a custom link from **Dashboard → Integrations → Video → Add Custom Link**.
+
+## Setting a video provider on an event type
+
+After connecting a video provider integration, go to **Dashboard → Event Types**, open the event type you want to configure, and select the video provider under **Location**. The room creation happens automatically when a booking is confirmed — hosts do not need to do anything at the time of the meeting.
+
+Each event type can use a different provider. For example, a "30-min intro call" event type can use Zoom while a "90-min workshop" event type uses Google Meet.
+
+## Video transcoding toggle
+
+Admins can manage a video transcoding setting from the **Admin panel** (`/admin`). This affects server-side video processing behaviour where applicable. Navigate to `/admin` and look for the video transcoding toggle in the admin settings.

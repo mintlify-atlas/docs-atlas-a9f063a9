@@ -1,0 +1,141 @@
+---
+title: "Generic OIDC and SSO for Tymeslot (Keycloak, Authentik, Okta)"
+sidebarTitle: "OIDC / SSO"
+description: "Connect any OIDC-compliant identity provider — Keycloak, Authentik, Okta, Azure AD, Lemonldap::NG — using the generic OAuth 2.0 integration."
+---
+
+Tymeslot includes a generic OAuth 2.0 / OIDC integration that works with any standards-compliant identity provider. This is the right path when you want to enforce corporate single sign-on — routing all logins through Keycloak, Authentik, Okta, Azure AD, Lemonldap::NG, or any other IdP that supports OIDC — without needing a provider-specific plugin.
+
+## Supported providers
+
+Any IdP that exposes standard OIDC endpoints works out of the box. Commonly deployed configurations include:
+
+- **Keycloak** (self-hosted)
+- **Authentik** (self-hosted)
+- **Okta**
+- **Azure Active Directory / Microsoft Entra ID**
+- **Lemonldap::NG**
+- Any other OAuth 2.0 + OIDC-compliant provider
+
+## Redirect URI
+
+Before configuring environment variables, register the following redirect URI with your identity provider:
+
+```
+https://your-domain.com/auth/oauth/callback
+```
+
+Replace `your-domain.com` with the hostname in your `PHX_HOST`. Every IdP has a slightly different term for this — "redirect URI", "callback URL", or "allowed return URL" — but the value is always the path above.
+
+## Required environment variables
+
+<ParamField body="ENABLE_OAUTH_AUTH" type="boolean" default="false">
+  Set to `true` to activate the generic OIDC login button and enable the callback endpoint. All other `OAUTH_*` variables are ignored unless this is `true`.
+</ParamField>
+
+<ParamField body="OAUTH_CLIENT_ID" type="string" required>
+  The client ID issued by your identity provider when you registered the Tymeslot application.
+</ParamField>
+
+<ParamField body="OAUTH_CLIENT_SECRET" type="string" required>
+  The client secret issued by your identity provider. Treat this like a password and store it securely.
+</ParamField>
+
+<ParamField body="OAUTH_PROVIDER_URL" type="string" required>
+  The base URL of your identity provider, for example `https://keycloak.example.com`. This is used as a human-readable reference and may be used to construct endpoint URLs in future releases.
+</ParamField>
+
+<ParamField body="OAUTH_AUTHORIZE_URL" type="string" required>
+  The full authorization endpoint URL. Must use HTTPS.
+</ParamField>
+
+<ParamField body="OAUTH_TOKEN_URL" type="string" required>
+  The full token endpoint URL. Must use HTTPS.
+</ParamField>
+
+<ParamField body="OAUTH_USERINFO_URL" type="string" required>
+  The full userinfo endpoint URL. Must use HTTPS. Tymeslot calls this endpoint after exchanging the authorization code for a token in order to retrieve the user's email and subject identifier.
+</ParamField>
+
+<Warning>
+  All three endpoint URLs — `OAUTH_AUTHORIZE_URL`, `OAUTH_TOKEN_URL`, and `OAUTH_USERINFO_URL` — **must use HTTPS**. HTTP endpoints are rejected at boot to prevent credential interception. If your IdP is only available over HTTP (for example in a private staging environment), you will need to put it behind a TLS-terminating proxy first.
+</Warning>
+
+## Optional environment variables
+
+<ParamField body="OAUTH_SCOPE" type="string" default="openid email profile">
+  Space-separated list of OAuth scopes to request. The defaults (`openid email profile`) are sufficient for most OIDC providers. Override this only if your IdP requires additional scopes or uses non-standard scope names.
+</ParamField>
+
+<ParamField body="OAUTH_ALLOW_ID_FALLBACK" type="boolean" default="false">
+  When `true`, Tymeslot will accept `id` or `user_id` as a subject claim if the IdP omits the standard `sub` claim. Only enable this for non-OIDC providers that do not return a `sub` claim. OIDC-compliant providers always include `sub` and do not need this flag.
+</ParamField>
+
+## Example configurations
+
+The endpoint paths below are the defaults for each platform. Your installation may use a different base URL or realm/tenant name — consult your IdP's well-known discovery document at `<provider-url>/.well-known/openid-configuration` to confirm the exact paths.
+
+<Tabs>
+  <Tab title="Keycloak">
+    Keycloak organises clients under realms. Replace `your-realm` with the realm name you created for Tymeslot, and `keycloak.example.com` with your Keycloak host.
+
+    First, register a new **Client** in your realm:
+    - **Client ID**: `tymeslot` (or any name you choose — this becomes `OAUTH_CLIENT_ID`)
+    - **Client Protocol**: `openid-connect`
+    - **Access Type**: `confidential`
+    - **Valid Redirect URIs**: `https://your-domain.com/auth/oauth/callback`
+
+    Then set these environment variables:
+
+    ```bash
+    ENABLE_OAUTH_AUTH=true
+    OAUTH_CLIENT_ID=tymeslot
+    OAUTH_CLIENT_SECRET=<secret from Keycloak Credentials tab>
+    OAUTH_PROVIDER_URL=https://keycloak.example.com
+    OAUTH_AUTHORIZE_URL=https://keycloak.example.com/realms/your-realm/protocol/openid-connect/auth
+    OAUTH_TOKEN_URL=https://keycloak.example.com/realms/your-realm/protocol/openid-connect/token
+    OAUTH_USERINFO_URL=https://keycloak.example.com/realms/your-realm/protocol/openid-connect/userinfo
+    OAUTH_SCOPE=openid email profile
+    ```
+  </Tab>
+  <Tab title="Authentik">
+    In Authentik, create a new **OAuth2/OpenID Provider** under **Applications → Providers**:
+    - **Name**: `Tymeslot`
+    - **Authorization flow**: your default authorization flow
+    - **Redirect URIs**: `https://your-domain.com/auth/oauth/callback`
+    - Copy the **Client ID** and **Client Secret** from the provider detail page.
+
+    Then create an **Application** that points to this provider, and set these environment variables:
+
+    ```bash
+    ENABLE_OAUTH_AUTH=true
+    OAUTH_CLIENT_ID=<client id from Authentik provider>
+    OAUTH_CLIENT_SECRET=<client secret from Authentik provider>
+    OAUTH_PROVIDER_URL=https://authentik.example.com
+    OAUTH_AUTHORIZE_URL=https://authentik.example.com/application/o/tymeslot/authorize/
+    OAUTH_TOKEN_URL=https://authentik.example.com/application/o/token/
+    OAUTH_USERINFO_URL=https://authentik.example.com/application/o/userinfo/
+    OAUTH_SCOPE=openid email profile
+    ```
+
+    Replace `tymeslot` in the authorize URL with the **slug** of the Authentik application you created (shown in the Application list). Confirm the exact paths from `https://authentik.example.com/application/o/tymeslot/.well-known/openid-configuration`.
+  </Tab>
+</Tabs>
+
+## How the login flow works
+
+1. The user clicks **Sign in with SSO** on the Tymeslot login page.
+2. Tymeslot generates a secure `state` parameter and redirects the browser to `OAUTH_AUTHORIZE_URL`.
+3. The IdP authenticates the user (password prompt, MFA, etc.) and redirects back to `https://your-domain.com/auth/oauth/callback`.
+4. Tymeslot validates the `state` parameter, exchanges the authorization code for a token at `OAUTH_TOKEN_URL`, and fetches the user's profile from `OAUTH_USERINFO_URL`.
+5. The `sub` claim (or `id`/`user_id` if `OAUTH_ALLOW_ID_FALLBACK=true`) is used as the stable identifier to look up or create the Tymeslot account.
+
+## Controlling registration via SSO
+
+The `REGISTRATION_ENABLED` flag applies to OIDC login as well as email/password. If you want to allow SSO login only for pre-existing accounts and block new account creation through the IdP, set:
+
+```bash
+REGISTRATION_ENABLED=false
+```
+
+Users whose accounts already exist in Tymeslot will continue to log in via SSO. Users whose email address is not yet in the system will be turned away rather than automatically provisioned.

@@ -1,0 +1,162 @@
+---
+title: "Connect Tymeslot to an External PostgreSQL Database"
+sidebarTitle: "External Database"
+description: "Point Tymeslot at an external PostgreSQL instance (AWS RDS, Azure, DigitalOcean, or self-hosted). Requires PostgreSQL 14 or later."
+---
+
+By default, the Tymeslot Docker image ships with PostgreSQL embedded directly in the container. On first start, the entrypoint script initialises a local PostgreSQL cluster, stores its data in the `tymeslot_pg` named volume, and Tymeslot connects to it over localhost. This is the simplest possible setup and works well for personal deployments and small teams.
+
+## When to use an external database
+
+Consider switching to an external PostgreSQL instance when you need:
+
+- **High availability** — managed services (AWS RDS Multi-AZ, Azure Database for PostgreSQL, DigitalOcean Managed Databases) provide automatic failover that the embedded single-node PostgreSQL cannot.
+- **Managed backups** — cloud providers handle point-in-time recovery and snapshot retention automatically.
+- **Existing infrastructure** — you already run a shared PostgreSQL cluster and want Tymeslot to use it rather than operating a separate embedded database.
+- **Host-path volume compatibility** — the embedded PostgreSQL can fail to initialise on Docker Desktop, rootless Docker, or SELinux-enforcing hosts when a bind-mount is used for the data directory. An external database sidesteps this entirely.
+
+## How detection works
+
+Tymeslot decides whether to start the embedded PostgreSQL based on the value of `DATABASE_HOST`:
+
+| `DATABASE_HOST` value | Behaviour |
+|---|---|
+| `localhost` (default) or `127.0.0.1` | The container starts and manages embedded PostgreSQL |
+| Any other hostname or IP | The container skips embedded PostgreSQL and connects to the external host |
+
+There is no other flag to set — pointing `DATABASE_HOST` at an external host is sufficient.
+
+<Warning>
+  Tymeslot does **not** create the database or user on an external PostgreSQL server. Both must already exist before you start the container. Tymeslot only runs schema migrations (`CREATE TABLE`, `ALTER TABLE`) on the database it connects to — it does not issue `CREATE DATABASE` or `CREATE ROLE`.
+</Warning>
+
+## Required environment variables
+
+Set all five variables when connecting to an external database:
+
+```bash
+DATABASE_HOST=your-db-host.example.com
+DATABASE_PORT=5432
+POSTGRES_DB=tymeslot
+POSTGRES_USER=tymeslot_user
+POSTGRES_PASSWORD=a-strong-password
+```
+
+<ParamField path="DATABASE_HOST" type="string" default="localhost">
+  Hostname or IP address of the PostgreSQL server. Any value other than `localhost` or `127.0.0.1` triggers external-database mode.
+</ParamField>
+
+<ParamField path="DATABASE_PORT" type="integer" default="5432">
+  PostgreSQL port. Change this only if your provider uses a non-standard port.
+</ParamField>
+
+<ParamField path="POSTGRES_DB" type="string" default="tymeslot">
+  Name of the database Tymeslot will connect to. Must already exist.
+</ParamField>
+
+<ParamField path="POSTGRES_USER" type="string" default="tymeslot">
+  PostgreSQL username. Must already exist and have full privileges on `POSTGRES_DB`.
+</ParamField>
+
+<ParamField path="POSTGRES_PASSWORD" type="string" required>
+  Password for `POSTGRES_USER`.
+</ParamField>
+
+## Preparing the external database
+
+Before starting Tymeslot, connect to your PostgreSQL instance as a superuser and run:
+
+```sql
+-- Create the database
+CREATE DATABASE tymeslot;
+
+-- Create the user
+CREATE USER tymeslot_user WITH PASSWORD 'a-strong-password';
+
+-- Grant all privileges on the database
+GRANT ALL PRIVILEGES ON DATABASE tymeslot TO tymeslot_user;
+
+-- PostgreSQL 15+ requires this additional grant
+GRANT ALL ON SCHEMA public TO tymeslot_user;
+```
+
+Tymeslot will run all schema migrations automatically on first startup.
+
+## Connection pool tuning
+
+<ParamField path="DATABASE_POOL_SIZE" type="integer" default="10">
+  Number of database connections in the Ecto pool. The container entrypoint defaults this to `10`.
+
+  For higher-concurrency deployments, raise this value and ensure your PostgreSQL `max_connections` is set above it. A good rule of thumb: `max_connections` should be at least `DATABASE_POOL_SIZE + 10` to leave headroom for administrative connections.
+
+  ```bash
+  DATABASE_POOL_SIZE=20
+  ```
+</ParamField>
+
+## Network and firewall requirements
+
+The Tymeslot container must be able to reach the database host on `DATABASE_PORT` (default 5432). Common things to check:
+
+- **Security groups / firewall rules** — allow inbound TCP on port 5432 from the Tymeslot container's IP or security group.
+- **PostgreSQL `pg_hba.conf`** — ensure a rule allows the Tymeslot user to connect from the container's IP with password authentication.
+- **DNS resolution** — the `DATABASE_HOST` value must resolve from inside the container. Use a private DNS hostname for managed services (e.g. an AWS VPC endpoint) rather than a public hostname when possible.
+
+## Provider examples
+
+<Tabs>
+  <Tab title="AWS RDS">
+    After creating an RDS PostgreSQL instance (version 14 or later), create the database and user as shown above, then set:
+
+    ```bash
+    DATABASE_HOST=myinstance.xxxxxxxxxxxx.us-east-1.rds.amazonaws.com
+    DATABASE_PORT=5432
+    POSTGRES_DB=tymeslot
+    POSTGRES_USER=tymeslot_user
+    POSTGRES_PASSWORD=your-rds-password
+    ```
+
+    Make sure the RDS security group allows inbound traffic on port 5432 from your Tymeslot host's security group or IP address.
+
+    <Note>
+      RDS enforces SSL for connections by default on recent engine versions. Tymeslot's Ecto adapter negotiates SSL automatically when the server requests it.
+    </Note>
+  </Tab>
+
+  <Tab title="DigitalOcean Managed Postgres">
+    DigitalOcean Managed Databases provide the connection details in the dashboard. Use the **private hostname** (not the public one) when your Droplet is in the same region as the database cluster:
+
+    ```bash
+    DATABASE_HOST=db-postgresql-nyc3-xxxxx-do-user-xxxxxxx-0.b.db.ondigitalocean.com
+    DATABASE_PORT=25060
+    POSTGRES_DB=tymeslot
+    POSTGRES_USER=tymeslot_user
+    POSTGRES_PASSWORD=your-do-db-password
+    ```
+
+    <Note>
+      DigitalOcean Managed Postgres uses port `25060` by default, not `5432`. Set `DATABASE_PORT=25060` accordingly.
+    </Note>
+
+    DigitalOcean requires SSL for all connections. The Ecto adapter handles this automatically.
+  </Tab>
+</Tabs>
+
+## Disabling the embedded PostgreSQL
+
+When `DATABASE_HOST` points to an external server, the container entrypoint automatically skips initialising and starting the internal PostgreSQL process. The `tymeslot_pg` volume is no longer needed and can be left detached or removed. You only need the `tymeslot_data` volume for uploaded files and application data:
+
+```bash
+docker run -d \
+  --name tymeslot \
+  -p 4000:4000 \
+  -e DATABASE_HOST=your-db-host.example.com \
+  -e DATABASE_PORT=5432 \
+  -e POSTGRES_DB=tymeslot \
+  -e POSTGRES_USER=tymeslot_user \
+  -e POSTGRES_PASSWORD=your-password \
+  -e SECRET_KEY_BASE="$(openssl rand -base64 64 | tr -d '\n')" \
+  -e PHX_HOST=tymeslot.yourdomain.com \
+  -v tymeslot_data:/app/data \
+  luka1thb/tymeslot:latest
+```

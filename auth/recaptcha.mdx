@@ -1,0 +1,141 @@
+---
+title: "Protect Tymeslot Forms with Google reCAPTCHA v3"
+sidebarTitle: "reCAPTCHA"
+description: "Add invisible reCAPTCHA v3 protection to signup and booking forms to block automated submissions. Configure per-form score thresholds and action names."
+---
+
+Tymeslot integrates Google reCAPTCHA v3 to protect the signup and booking forms from automated submissions. Unlike reCAPTCHA v2 — which presents a checkbox or image challenge — v3 runs entirely in the background and returns a score between 0.0 and 1.0 that represents how likely the submission is to be human. No interaction is required from your users. reCAPTCHA sits as the third layer in a defence-in-depth pipeline alongside a honeypot hidden field and a per-email/per-IP rate limiter.
+
+<Note>
+  reCAPTCHA v3 is **invisible** — there is no checkbox, image grid, or visible challenge. Users on your signup and booking pages will not see any reCAPTCHA widget. The score is computed silently by Google's risk engine based on browser behaviour and interaction signals.
+</Note>
+
+## How scoring works
+
+Google's reCAPTCHA v3 service assigns every form submission a **score** from `0.0` (very likely a bot) to `1.0` (very likely a human). Tymeslot compares the returned score against a configurable minimum threshold and rejects the submission if the score falls below it.
+
+Tymeslot defaults both thresholds to `0.3`, which is intentionally permissive. This reduces false positives for legitimate users on VPNs, mobile networks, or privacy-focused browsers that reduce the signals available to Google's scoring engine. Combined with the honeypot and rate limiter, even a permissive reCAPTCHA threshold provides meaningful protection.
+
+## Setup
+
+<Steps>
+  <Step title="Register your site at the reCAPTCHA Admin Console">
+    Go to [https://www.google.com/recaptcha/admin](https://www.google.com/recaptcha/admin) and sign in with a Google account.
+
+    Click **+** (Create) and fill in the form:
+    - **Label**: `Tymeslot` (or any descriptive name)
+    - **reCAPTCHA type**: **Score based (v3)**
+    - **Domains**: add your Tymeslot hostname (e.g. `tymeslot.yourdomain.com`). Add `localhost` as well if you want to test locally.
+
+    Click **Submit**.
+  </Step>
+
+  <Step title="Copy your site and secret keys">
+    After registration, the console displays two keys:
+
+    - **Site key** — embedded in the browser page (public).
+    - **Secret key** — used server-side for verification (keep this private).
+
+    Copy both. You will need them in the next step.
+  </Step>
+
+  <Step title="Set the key environment variables">
+    Add both keys to your `.env`:
+
+    ```bash
+    RECAPTCHA_SITE_KEY=<your_site_key>
+    RECAPTCHA_SECRET_KEY=<your_secret_key>
+    ```
+
+    The keys are shared across both the signup and booking integrations — you do not need separate keys per form.
+  </Step>
+
+  <Step title="Enable protection per form">
+    reCAPTCHA is opt-in per form. Enable whichever forms you want to protect:
+
+    ```bash
+    # Enable on the signup registration form
+    RECAPTCHA_SIGNUP_ENABLED=true
+
+    # Enable on the booking submission form
+    RECAPTCHA_BOOKING_ENABLED=true
+    ```
+
+    You can enable one without the other. Both default to `false`.
+  </Step>
+
+  <Step title="Tune score thresholds (optional)">
+    The default minimum score is `0.3` for both forms. Raise it to block more borderline traffic; lower it to reduce false positives:
+
+    ```bash
+    # Scores below this value are rejected on the signup form (default: 0.3)
+    RECAPTCHA_SIGNUP_MIN_SCORE=0.3
+
+    # Scores below this value are rejected on the booking form (default: 0.3)
+    RECAPTCHA_BOOKING_MIN_SCORE=0.3
+    ```
+
+    Start with the defaults and monitor your logs before tightening. A threshold of `0.5` is Google's general recommendation, but `0.3` works well when combined with the other security layers Tymeslot already applies.
+  </Step>
+
+  <Step title="Restart Tymeslot">
+    Environment variables are read at boot. Restart the container to apply your changes:
+
+    ```bash
+    docker restart tymeslot
+    ```
+  </Step>
+</Steps>
+
+## Environment variables reference
+
+<ParamField body="RECAPTCHA_SITE_KEY" type="string">
+  The public site key from the reCAPTCHA Admin Console. Embedded in the browser page to load the reCAPTCHA script. Required when `RECAPTCHA_SIGNUP_ENABLED=true` or `RECAPTCHA_BOOKING_ENABLED=true`.
+</ParamField>
+
+<ParamField body="RECAPTCHA_SECRET_KEY" type="string">
+  The private secret key used server-side to verify reCAPTCHA tokens with Google's API. Never expose this in client-side code or public logs.
+</ParamField>
+
+<ParamField body="RECAPTCHA_SIGNUP_ENABLED" type="boolean" default="false">
+  Enable reCAPTCHA verification on the account registration form. Requires `RECAPTCHA_SITE_KEY` and `RECAPTCHA_SECRET_KEY` to be set. If keys are missing when this is `true`, reCAPTCHA is automatically disabled (logged as a warning) so legitimate signups are not blocked.
+</ParamField>
+
+<ParamField body="RECAPTCHA_BOOKING_ENABLED" type="boolean" default="false">
+  Enable reCAPTCHA verification on the booking submission form. Same key requirements and graceful-degradation behaviour as `RECAPTCHA_SIGNUP_ENABLED`.
+</ParamField>
+
+<ParamField body="RECAPTCHA_SIGNUP_MIN_SCORE" type="float" default="0.3">
+  Minimum reCAPTCHA score required to accept a signup submission. Values range from `0.0` (bot) to `1.0` (human). Submissions scoring below this threshold are rejected.
+</ParamField>
+
+<ParamField body="RECAPTCHA_BOOKING_MIN_SCORE" type="float" default="0.3">
+  Minimum reCAPTCHA score required to accept a booking submission. Follows the same `0.0`–`1.0` scale as the signup threshold.
+</ParamField>
+
+<ParamField body="RECAPTCHA_SIGNUP_ACTION" type="string" default="signup_form">
+  The reCAPTCHA action name sent with signup verifications. Google's dashboard uses action names to segment your score analytics. Override this only if you need custom analytics groupings.
+</ParamField>
+
+<ParamField body="RECAPTCHA_BOOKING_ACTION" type="string" default="booking_form">
+  The reCAPTCHA action name sent with booking verifications. Same purpose as `RECAPTCHA_SIGNUP_ACTION`.
+</ParamField>
+
+<ParamField body="RECAPTCHA_EXPECTED_HOSTNAMES" type="string">
+  Comma-separated list of hostnames that are expected in reCAPTCHA verification responses (e.g. `tymeslot.yourdomain.com`). When set, Tymeslot will reject tokens whose response hostname does not match. Leave unset to skip hostname validation — useful when running behind a reverse proxy or in environments where the hostname seen by Google may differ from `PHX_HOST`.
+</ParamField>
+
+## Graceful degradation
+
+If `RECAPTCHA_SIGNUP_ENABLED=true` or `RECAPTCHA_BOOKING_ENABLED=true` is set but the corresponding keys are missing or blank, Tymeslot **does not crash or block legitimate submissions**. Instead, it logs a warning (rate-limited to once per minute to avoid log spam) and allows the form through. This ensures that a misconfiguration does not lock users out of your instance.
+
+## Adjusting thresholds after launch
+
+The reCAPTCHA Admin Console (at [https://www.google.com/recaptcha/admin](https://www.google.com/recaptcha/admin)) shows a score distribution graph for your site after traffic starts flowing. Use this to calibrate your thresholds:
+
+- If the distribution shows most legitimate traffic scoring above `0.7`, you can safely raise the threshold closer to `0.5`.
+- If you are seeing false positive rejections from real users, lower the threshold or check whether a browser extension or Content Security Policy is interfering with the reCAPTCHA script.
+
+<Warning>
+  If a user's browser blocks the reCAPTCHA script (ad blocker, strict CSP, JavaScript disabled), the form submission carries a special `RECAPTCHA_SCRIPT_BLOCKED` marker instead of a score token. Tymeslot detects this marker and returns an error asking the user to enable JavaScript and reload. Make sure your Content Security Policy allows `https://www.google.com` and `https://www.gstatic.com` if you serve a custom CSP header.
+</Warning>

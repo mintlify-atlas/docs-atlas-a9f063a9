@@ -1,0 +1,132 @@
+---
+title: "Integrate Google Calendar and Google Meet with Tymeslot"
+sidebarTitle: "Google"
+description: "Connect Google Calendar for two-way sync and Google Meet for automatic video room creation. Requires a Google Cloud OAuth 2.0 app with Calendar and Meet APIs enabled."
+---
+
+Tymeslot's Google integration covers two things with a single OAuth 2.0 app: **Google Calendar** keeps your availability accurate by syncing events in both directions, and **Google Meet** auto-generates a video room the moment a booking is confirmed. You create one OAuth credential set in Google Cloud Console, paste three environment variables, and both features light up together.
+
+## What this integration provides
+
+- **Google Calendar two-way sync** — Tymeslot reads your Google Calendar to block off busy times, and writes confirmed bookings back as calendar events (with an `.ics` attachment sent to the attendee).
+- **Google Meet room auto-creation** — When a booking is confirmed on an event type configured for Google Meet, Tymeslot calls the Meet API and embeds the join link in the calendar event and confirmation email.
+- **Optional Google login/signup** — set `ENABLE_GOOGLE_AUTH=true` to let users sign in to Tymeslot with their Google account.
+
+## Prerequisites
+
+- A [Google Cloud](https://console.cloud.google.com/) project (new or existing)
+- **Google Calendar API** enabled on that project
+- **Google Meet API** enabled on that project
+- A domain with HTTPS (required for the OAuth redirect URI and for webhook push notifications)
+
+## Create the Google OAuth app
+
+<Steps>
+  <Step title="Create or select a Google Cloud project">
+    Go to [console.cloud.google.com](https://console.cloud.google.com/) and either create a new project or select an existing one from the project dropdown at the top of the page.
+  </Step>
+
+  <Step title="Enable the required APIs">
+    Navigate to **APIs & Services → Library**.
+
+    Search for and enable both of these APIs:
+
+    - **Google Calendar API** — required for calendar sync
+    - **Google Meet API** — required for Meet room creation
+
+    Click **Enable** on each one.
+  </Step>
+
+  <Step title="Configure the OAuth consent screen">
+    Go to **APIs & Services → OAuth consent screen**.
+
+    - Choose **External** (or **Internal** if this is a Google Workspace organization deployment).
+    - Fill in the required fields: app name, support email, and developer contact.
+    - Under **Scopes**, add the following:
+      - `https://www.googleapis.com/auth/calendar`
+      - `https://www.googleapis.com/auth/calendar.events`
+    - If using **External**, add any Google accounts that should be able to connect the integration to the list of **Test users** while the app is unpublished.
+    - Save and continue through all sections.
+  </Step>
+
+  <Step title="Create OAuth 2.0 credentials">
+    Go to **APIs & Services → Credentials**, then click **Create Credentials → OAuth 2.0 Client IDs**.
+
+    - **Application type**: Web application
+    - **Name**: `Tymeslot` (or any label you prefer)
+    - Under **Authorized redirect URIs**, add **both** of the following (both are needed — the first is for Google Calendar, the second for Google Meet):
+      ```
+      https://your-domain.com/auth/google/calendar/callback
+      https://your-domain.com/auth/google/video/callback
+      ```
+      Replace `your-domain.com` with your actual Tymeslot hostname. The URIs must be exact matches — no trailing slashes.
+    - Click **Create**.
+
+    Google will display a **Client ID** and **Client Secret**. Copy both — you will need them for the next step.
+  </Step>
+
+  <Step title="Set environment variables">
+    Add these variables to your `.env` file (or Docker `--env` flags):
+
+    ```bash
+    GOOGLE_CLIENT_ID=<your_google_client_id>
+    GOOGLE_CLIENT_SECRET=<your_google_client_secret>
+    GOOGLE_STATE_SECRET=<random_string_you_generate>
+    ```
+
+    Generate `GOOGLE_STATE_SECRET` yourself — see the warning below.
+
+    Optionally, enable Google login/signup:
+
+    ```bash
+    ENABLE_GOOGLE_AUTH=true
+    ```
+
+    Restart Tymeslot for the variables to take effect.
+  </Step>
+</Steps>
+
+<Warning>
+  `GOOGLE_STATE_SECRET` is **not** a value provided by Google. It is a random string you generate yourself and keep secret — it protects the OAuth flow against CSRF attacks. Generate it with:
+
+  ```bash
+  openssl rand -base64 32 | tr -d '\n'
+  ```
+
+  Keep it stable across restarts. Changing it will invalidate any in-flight OAuth authorisation attempts.
+</Warning>
+
+## Environment variable reference
+
+| Variable | Required | Description |
+|---|---|---|
+| `GOOGLE_CLIENT_ID` | Yes | OAuth 2.0 Client ID from Google Cloud Console |
+| `GOOGLE_CLIENT_SECRET` | Yes | OAuth 2.0 Client Secret from Google Cloud Console |
+| `GOOGLE_STATE_SECRET` | Yes | Self-generated random string for CSRF protection |
+| `ENABLE_GOOGLE_AUTH` | No | Set `true` to allow Google login/signup (default: `false`) |
+| `WEBHOOK_BASE_URL` | No | Public HTTPS base URL for real-time push notifications |
+| `ALLOW_PRIVATE_IPS_FOR_CALENDAR` | No | Set `true` if your CalDAV or video server is on a private network |
+
+## Real-time calendar push notifications
+
+By default, Tymeslot polls Google Calendar every 15 minutes to detect new and changed events. For real-time sync, set `WEBHOOK_BASE_URL` to your Tymeslot instance's public HTTPS base URL:
+
+```bash
+WEBHOOK_BASE_URL=https://tymeslot.your-domain.com
+```
+
+Scheme and host only — no trailing slash, no path. Tymeslot appends its own webhook paths automatically. Google performs a validation handshake against this URL during channel registration, so it must be publicly reachable. Leave `WEBHOOK_BASE_URL` unset on localhost or private network deployments — polling will work perfectly.
+
+## Private network CalDAV or video servers
+
+If you run a CalDAV server or a self-hosted video provider (such as MiroTalk) on a private or loopback address, outbound requests to those hosts are blocked by default as SSRF protection. Set this flag to permit them:
+
+```bash
+ALLOW_PRIVATE_IPS_FOR_CALENDAR=true
+```
+
+This setting applies to calendar and video integration outbound requests only. It does not affect webhook delivery (see `ALLOW_PRIVATE_IPS_FOR_WEBHOOKS` in the environment variable reference).
+
+## Connecting the integration
+
+Once the environment variables are in place, users connect Google Calendar and Google Meet from **Dashboard → Integrations**. Each user authorises their own Google account independently — the OAuth app credentials are shared across all users of the instance, but each user's tokens are stored and encrypted separately.

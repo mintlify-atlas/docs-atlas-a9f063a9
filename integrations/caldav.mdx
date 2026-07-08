@@ -1,0 +1,89 @@
+---
+title: "Connect CalDAV Calendars to Tymeslot"
+sidebarTitle: "CalDAV"
+description: "Sync Tymeslot with any CalDAV server: Nextcloud, Radicale, Zimbra, Baikal, Apple iCloud, and mailbox.org. No OAuth app required — uses username and password."
+---
+
+Tymeslot supports CalDAV, the open standard for calendar sync, which means you can connect almost any self-hosted or third-party calendar server without registering an OAuth app or touching the Google Cloud Console or Azure Portal. Users provide their CalDAV server URL, username, and password directly in the Tymeslot dashboard — no admin-level setup required beyond deciding whether to allow connections to private network addresses.
+
+## How CalDAV differs from Google and Microsoft
+
+| | Google Calendar | Outlook Calendar | CalDAV |
+|---|---|---|---|
+| **Setup required by admin** | OAuth 2.0 app in Google Cloud | Azure AD app registration | None (optional: `ALLOW_PRIVATE_IPS_FOR_CALENDAR`) |
+| **User credentials** | OAuth — Google account | OAuth — Microsoft account | Server URL + username + password |
+| **Real-time push** | Google push channels (with `WEBHOOK_BASE_URL`) | Graph subscriptions (with `WEBHOOK_BASE_URL`) | Not supported — polling only |
+| **Default sync interval** | 15-minute fallback polling | 15-minute fallback polling | 15 minutes |
+
+CalDAV does not support server-initiated push webhooks. Tymeslot polls CalDAV calendars on a 15-minute cycle regardless of whether `WEBHOOK_BASE_URL` is set. This is fully functional — availability and conflict checks remain accurate within the polling window.
+
+## Supported CalDAV servers
+
+| Server | Notes |
+|---|---|
+| **Nextcloud** | Typical CalDAV URL: `https://nextcloud.example.com/remote.php/dav/calendars/username/` |
+| **Radicale** | Typically `http://localhost:5232` or the equivalent on your host; see private IP note below |
+| **Zimbra** | Standard CalDAV endpoint — check your Zimbra admin for the exact path |
+| **Baikal** | Lightweight PHP CalDAV server; configure URL from the Baikal admin panel |
+| **Apple iCloud** | Fixed URL `https://caldav.icloud.com`; requires an app-specific password |
+| **mailbox.org** | CalDAV available at `https://caldav.mailbox.org` |
+
+Any server that speaks the CalDAV (RFC 4791) protocol should work, including private or self-hosted instances not listed above.
+
+## Server-specific notes
+
+### Apple iCloud
+
+iCloud requires an **app-specific password** — it will reject your regular Apple ID password for CalDAV connections.
+
+Generate one at [appleid.apple.com](https://appleid.apple.com) under **Sign-In and Security → App-Specific Passwords**. Use your Apple ID email as the username and the generated password (format: `xxxx-xxxx-xxxx-xxxx`) as the password when connecting in Tymeslot.
+
+The CalDAV server URL is always `https://caldav.icloud.com`.
+
+### Nextcloud
+
+The CalDAV endpoint follows this pattern:
+
+```
+https://nextcloud.example.com/remote.php/dav/calendars/<username>/
+```
+
+Replace `nextcloud.example.com` with your Nextcloud hostname and `<username>` with the Nextcloud username. You can also find the exact URL in Nextcloud under **Settings → Personal → Calendar → Copy primary CalDAV address**.
+
+### Radicale
+
+Radicale typically listens on `http://localhost:5232` (or a configured host/port). If your Radicale instance is on the same private network as your Tymeslot container, you will need to enable private IP access — see the note below.
+
+The CalDAV URL format for Radicale is:
+
+```
+http://<host>:<port>/<username>/
+```
+
+## Allowing private network CalDAV servers
+
+<Note>
+  In production, Tymeslot blocks outbound calendar requests to private, loopback, and link-local IP addresses (e.g. `localhost`, `10.0.0.0/8`, `192.168.0.0/16`) as SSRF protection. If your CalDAV server (Radicale, a local Nextcloud instance, Baikal, or similar) resolves to one of these addresses, connections will fail unless you explicitly permit them.
+
+  Add this to your `.env` to allow private network CalDAV connections:
+
+  ```bash
+  ALLOW_PRIVATE_IPS_FOR_CALENDAR=true
+  ```
+
+  This setting applies to calendar integration and self-hosted video provider (e.g. MiroTalk) outbound requests only. Outbound webhook delivery has a separate flag (`ALLOW_PRIVATE_IPS_FOR_WEBHOOKS`) and is not affected by this setting.
+</Note>
+
+## Polling interval
+
+CalDAV calendars are polled every **15 minutes**. This interval is fixed — CalDAV servers do not support push notifications that would allow Tymeslot to receive change events in real time. All conflict checks at the moment of booking use the most recent cached state, so in practice double-bookings are prevented even between polling cycles.
+
+## Connecting CalDAV from the dashboard
+
+No server-side configuration is needed beyond the optional `ALLOW_PRIVATE_IPS_FOR_CALENDAR` flag. Users connect their CalDAV calendar directly from **Dashboard → Integrations → Calendar** by providing:
+
+1. **Server URL** — the base CalDAV URL for their server (examples above)
+2. **Username** — typically the account username or email address
+3. **Password** — the account password, or an app-specific password for iCloud
+
+Tymeslot validates the connection immediately and shows an error if the URL is unreachable, the credentials are wrong, or the server does not speak CalDAV. Credentials are encrypted at rest with AES-256-GCM.

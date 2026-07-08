@@ -1,0 +1,376 @@
+---
+title: "Tymeslot Environment Variable Reference"
+sidebarTitle: "Env Variables"
+description: "Complete reference for all Tymeslot environment variables. Covers required settings, email, OAuth, database, proxy, analytics, Stripe, and more."
+---
+
+Tymeslot is configured entirely through environment variables. The repository ships with a `.env.example` file that acts as a canonical template — copy it to `.env`, fill in the values you need, and leave commented-out optional variables at their defaults. Shell environment variables always win over `.env` values, so any variable you set in your container runtime or orchestrator takes precedence automatically.
+
+```bash
+cp .env.example .env
+# Then edit .env with your values
+```
+
+## Required settings
+
+These three variables must be set before Tymeslot will start. The application raises a hard error at boot if any of them is missing.
+
+<ParamField path="SECRET_KEY_BASE" type="string" required>
+  Signing and encryption key for cookies, tokens, and other secrets. Must be at least 64 characters. Generate with:
+
+  ```bash
+  openssl rand -base64 64 | tr -d '\n'
+  ```
+</ParamField>
+
+<ParamField path="PHX_HOST" type="string" required>
+  Your public domain name, e.g. `tymeslot.yourdomain.com`. Used to build absolute URLs in emails, OAuth redirect URIs, and calendar webhook callbacks. Do not include a scheme or trailing slash.
+</ParamField>
+
+<ParamField path="POSTGRES_PASSWORD" type="string" required>
+  Password for the PostgreSQL user. For the embedded database this can be any strong value; for an external database it must match the credentials of the pre-existing user. Generate with:
+
+  ```bash
+  openssl rand -base64 32 | tr -d '\n'
+  ```
+</ParamField>
+
+<ParamField path="DATA_ENCRYPTION_KEY" type="string">
+  Dedicated AES-256-GCM key for encrypting credentials at rest, independent of `SECRET_KEY_BASE`. Setting it lets you rotate `SECRET_KEY_BASE` without making stored calendar tokens, CalDAV passwords, and API keys undecryptable. Generate with:
+
+  ```bash
+  openssl rand -base64 48 | tr -d '\n'
+  ```
+
+  Once set it **must stay stable across restarts**. After adding it to an existing install, run the re-encryption sweep described in the [Data Encryption](/configuration/data-encryption) guide.
+
+  **Default:** key derived from `SECRET_KEY_BASE` (a startup warning is logged if this is unset).
+</ParamField>
+
+## Application settings
+
+<ParamField path="PORT" type="integer" default="4000">
+  TCP port the Phoenix HTTP server listens on inside the container.
+</ParamField>
+
+<ParamField path="LISTEN_IP" type="string" default="::">
+  IP address the HTTP server binds to. Common values:
+
+  | Value | Behaviour |
+  |---|---|
+  | `::` | All IPv4 and IPv6 interfaces (default) |
+  | `0.0.0.0` | All IPv4 interfaces only |
+  | `127.0.0.1` | Localhost only — use this behind a reverse proxy |
+</ParamField>
+
+<ParamField path="URL_SCHEME" type="string" default="https">
+  URL scheme for generated links. Set to `http` only for local or internal deployments without TLS. Production deployments should leave this at `https`.
+</ParamField>
+
+<ParamField path="WS_ALLOWED_ORIGINS" type="string">
+  Comma-separated list of origins allowed to open a LiveView WebSocket connection. Defaults to origins derived from `PHX_HOST` (both `http://` and `https://` variants plus `localhost:4000`). Override when you serve the app under multiple hostnames.
+
+  **Example:** `https://yourdomain.com,https://www.yourdomain.com`
+</ParamField>
+
+<ParamField path="REGISTRATION_ENABLED" type="boolean" default="true">
+  Set to `false` to disable new user registration. Applies to all authentication methods including SSO and social login.
+</ParamField>
+
+<ParamField path="DNS_CLUSTER_QUERY" type="string">
+  DNS SRV query for multi-node Erlang clustering. Leave unset for single-node deployments (the default for most self-hosters).
+</ParamField>
+
+## Database settings
+
+<ParamField path="DATABASE_HOST" type="string" default="localhost">
+  PostgreSQL hostname. When set to `localhost` or `127.0.0.1`, Tymeslot uses the embedded PostgreSQL that runs inside the Docker container. Any other value tells the container to skip starting embedded PostgreSQL and connect to the external host instead.
+</ParamField>
+
+<ParamField path="DATABASE_PORT" type="integer" default="5432">
+  PostgreSQL port.
+</ParamField>
+
+<ParamField path="POSTGRES_DB" type="string" default="tymeslot">
+  PostgreSQL database name.
+</ParamField>
+
+<ParamField path="POSTGRES_USER" type="string" default="tymeslot">
+  PostgreSQL username.
+</ParamField>
+
+<ParamField path="DATABASE_POOL_SIZE" type="integer" default="10">
+  Ecto database connection pool size. The container entrypoint defaults this to `10`. Raise it for higher concurrency workloads and ensure your PostgreSQL `max_connections` is set higher than this value.
+</ParamField>
+
+## Email configuration
+
+<ParamField path="EMAIL_ADAPTER" type="string" default="test">
+  Email delivery backend. Valid values:
+
+  | Value | Behaviour |
+  |---|---|
+  | `test` | Silently discards all mail — **default, not suitable for production** |
+  | `smtp` | Deliver via SMTP using the `SMTP_*` variables below |
+  | `postmark` | Deliver via Postmark API using `POSTMARK_API_KEY` |
+</ParamField>
+
+<ParamField path="EMAIL_FROM_NAME" type="string" default="Tymeslot">
+  Sender display name shown in recipients' email clients.
+</ParamField>
+
+<ParamField path="EMAIL_FROM_ADDRESS" type="string" default="hello@tymeslot.app">
+  Sender email address. Set this to an address on your own domain for production deployments.
+</ParamField>
+
+<ParamField path="EMAIL_SUPPORT_ADDRESS" type="string">
+  Support contact address shown in email footers. Defaults to `EMAIL_FROM_ADDRESS` when unset.
+</ParamField>
+
+<ParamField path="EMAIL_CONTACT_RECIPIENT" type="string">
+  Recipient address for contact-form submissions. Defaults to `EMAIL_FROM_ADDRESS` when unset.
+</ParamField>
+
+<ParamField path="POSTMARK_API_KEY" type="string">
+  Postmark server API key. **Required when `EMAIL_ADAPTER=postmark`.** Sign up at [postmarkapp.com](https://postmarkapp.com).
+</ParamField>
+
+<ParamField path="SMTP_HOST" type="string">
+  SMTP server hostname, e.g. `smtp.gmail.com`. **Required when `EMAIL_ADAPTER=smtp`.**
+</ParamField>
+
+<ParamField path="SMTP_PORT" type="integer" default="587">
+  SMTP server port. `587` (STARTTLS) is the standard value for most providers.
+</ParamField>
+
+<ParamField path="SMTP_USERNAME" type="string">
+  SMTP authentication username. **Required when `EMAIL_ADAPTER=smtp`.**
+</ParamField>
+
+<ParamField path="SMTP_PASSWORD" type="string">
+  SMTP authentication password or app-specific password. **Required when `EMAIL_ADAPTER=smtp`.**
+</ParamField>
+
+## OAuth integrations
+
+These credentials power calendar sync and video conferencing integrations. They are required only when users connect the corresponding integration; leave them unset to disable those options in the UI.
+
+<ParamField path="GOOGLE_CLIENT_ID" type="string">
+  Google OAuth 2.0 client ID. Enables Google Calendar sync and Google Meet video. Create credentials at [console.cloud.google.com](https://console.cloud.google.com). Redirect URI: `https://yourdomain.com/auth/google/callback`
+</ParamField>
+
+<ParamField path="GOOGLE_CLIENT_SECRET" type="string">
+  Google OAuth 2.0 client secret.
+</ParamField>
+
+<ParamField path="GOOGLE_STATE_SECRET" type="string">
+  Random string used as a CSRF state parameter for the Google OAuth flow. Self-generated — not provided by Google. Generate with `openssl rand -base64 32`.
+</ParamField>
+
+<ParamField path="OUTLOOK_CLIENT_ID" type="string">
+  Microsoft Azure app registration client ID. **One app covers both Outlook Calendar and Microsoft Teams.** Register at [portal.azure.com](https://portal.azure.com) → Microsoft Entra ID → App registrations. Add both redirect URIs:
+  - `https://yourdomain.com/auth/outlook/calendar/callback`
+  - `https://yourdomain.com/auth/teams/video/callback`
+</ParamField>
+
+<ParamField path="OUTLOOK_CLIENT_SECRET" type="string">
+  Microsoft Azure app client secret value (from Certificates & secrets).
+</ParamField>
+
+<ParamField path="OUTLOOK_STATE_SECRET" type="string">
+  Random string used as a CSRF state parameter for the Microsoft OAuth flow. Self-generated — not provided by Microsoft. Generate with `openssl rand -base64 32`.
+</ParamField>
+
+## Calendar sync webhooks
+
+<ParamField path="WEBHOOK_BASE_URL" type="string">
+  Public HTTPS base URL that Google and Microsoft use to deliver real-time calendar change notifications (Google push channels and Outlook Graph subscriptions). Format: `https://tymeslot.yourdomain.com` — scheme and host only, no trailing slash.
+
+  When unset, calendar sync falls back to polling every 15 minutes. Only set this when the host is reachable from the public internet over HTTPS; providers perform a validation handshake against this URL during registration.
+</ParamField>
+
+<ParamField path="ALLOW_PRIVATE_IPS_FOR_CALENDAR" type="boolean" default="false">
+  Allow CalDAV and self-hosted video integrations whose hostname resolves to a private, loopback, or link-local address. In production, outbound requests to such hosts are blocked as SSRF protection. Set to `true` if you self-host your CalDAV server (e.g. Nextcloud, Radicale) or video provider on a private network. This switch does **not** affect webhook delivery — see `ALLOW_PRIVATE_IPS_FOR_WEBHOOKS`.
+</ParamField>
+
+<ParamField path="ALLOW_PRIVATE_IPS_FOR_WEBHOOKS" type="boolean" default="false">
+  Allow outbound webhook deliveries to URLs whose hostname resolves to a private, loopback, or link-local address. In production these are blocked as SSRF protection. Set to `true` only if you deliberately route webhooks to internal services. Deliberately separate from `ALLOW_PRIVATE_IPS_FOR_CALENDAR` so relaxing calendar SSRF does not silently open webhooks to internal hosts.
+</ParamField>
+
+## Social authentication
+
+<ParamField path="ENABLE_GOOGLE_AUTH" type="boolean" default="false">
+  Enable Google login and signup. Requires `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Setting this to `false` still allows users to connect Google Calendar — social auth and calendar integration are independent.
+</ParamField>
+
+<ParamField path="ENABLE_GITHUB_AUTH" type="boolean" default="false">
+  Enable GitHub login and signup. Requires `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`.
+</ParamField>
+
+<ParamField path="GITHUB_CLIENT_ID" type="string">
+  GitHub OAuth app client ID. **Required when `ENABLE_GITHUB_AUTH=true`.** Create an OAuth App at GitHub → Settings → Developer settings. Callback URL: `https://yourdomain.com/auth/github/callback`
+</ParamField>
+
+<ParamField path="GITHUB_CLIENT_SECRET" type="string">
+  GitHub OAuth app client secret. **Required when `ENABLE_GITHUB_AUTH=true`.**
+</ParamField>
+
+<ParamField path="ENABLE_OAUTH_AUTH" type="boolean" default="false">
+  Enable generic OAuth 2.0 / OIDC login for SSO with providers such as Keycloak, Authentik, or Lemonldap::NG. All `OAUTH_*` variables below become required when this is `true`.
+</ParamField>
+
+<ParamField path="OAUTH_CLIENT_ID" type="string">
+  Generic OAuth 2.0 / OIDC client ID. **Required when `ENABLE_OAUTH_AUTH=true`.**
+</ParamField>
+
+<ParamField path="OAUTH_CLIENT_SECRET" type="string">
+  Generic OAuth 2.0 / OIDC client secret. **Required when `ENABLE_OAUTH_AUTH=true`.**
+</ParamField>
+
+<ParamField path="OAUTH_PROVIDER_URL" type="string">
+  Base URL of your identity provider, e.g. `https://keycloak.example.com`. **Required when `ENABLE_OAUTH_AUTH=true`.**
+</ParamField>
+
+<ParamField path="OAUTH_AUTHORIZE_URL" type="string">
+  Authorization endpoint. Must be HTTPS. **Required when `ENABLE_OAUTH_AUTH=true`.**
+</ParamField>
+
+<ParamField path="OAUTH_TOKEN_URL" type="string">
+  Token endpoint. Must be HTTPS. **Required when `ENABLE_OAUTH_AUTH=true`.**
+</ParamField>
+
+<ParamField path="OAUTH_USERINFO_URL" type="string">
+  Userinfo endpoint. Must be HTTPS. **Required when `ENABLE_OAUTH_AUTH=true`.**
+</ParamField>
+
+<ParamField path="OAUTH_SCOPE" type="string" default="openid email profile">
+  Space-separated OAuth scopes to request.
+</ParamField>
+
+<ParamField path="OAUTH_ALLOW_ID_FALLBACK" type="boolean" default="false">
+  Accept `id` or `user_id` as the subject claim when the IdP omits `sub`. Enable only for non-OIDC providers that do not return a `sub` claim.
+</ParamField>
+
+## reCAPTCHA v3
+
+<ParamField path="RECAPTCHA_SITE_KEY" type="string">
+  Public reCAPTCHA v3 site key used in the browser. Required when `RECAPTCHA_SIGNUP_ENABLED=true` or `RECAPTCHA_BOOKING_ENABLED=true`. Sign up at [google.com/recaptcha/admin](https://www.google.com/recaptcha/admin).
+</ParamField>
+
+<ParamField path="RECAPTCHA_SECRET_KEY" type="string">
+  Private reCAPTCHA v3 secret key used server-side for score verification. Required when either reCAPTCHA feature flag is enabled.
+</ParamField>
+
+<ParamField path="RECAPTCHA_SIGNUP_ENABLED" type="boolean" default="false">
+  Enable reCAPTCHA v3 protection on the signup form.
+</ParamField>
+
+<ParamField path="RECAPTCHA_BOOKING_ENABLED" type="boolean" default="false">
+  Enable reCAPTCHA v3 protection on the booking form.
+</ParamField>
+
+<ParamField path="RECAPTCHA_SIGNUP_MIN_SCORE" type="float" default="0.3">
+  Minimum reCAPTCHA score to accept a signup submission as human. Range `0.0` (likely bot) to `1.0` (likely human).
+</ParamField>
+
+<ParamField path="RECAPTCHA_BOOKING_MIN_SCORE" type="float" default="0.3">
+  Minimum reCAPTCHA score to accept a booking submission as human.
+</ParamField>
+
+<ParamField path="RECAPTCHA_SIGNUP_ACTION" type="string" default="signup_form">
+  reCAPTCHA action name used for signup form verification.
+</ParamField>
+
+<ParamField path="RECAPTCHA_BOOKING_ACTION" type="string" default="booking_form">
+  reCAPTCHA action name used for booking form verification.
+</ParamField>
+
+<ParamField path="RECAPTCHA_EXPECTED_HOSTNAMES" type="string">
+  Comma-separated list of hostnames to validate in the reCAPTCHA response. Leave unset to skip hostname validation.
+</ParamField>
+
+## HTTP/HTTPS proxy
+
+<ParamField path="HTTP_PROXY" type="string">
+  Outbound proxy for HTTP requests. Format: `http://[user:password@]host:port`. Both `HTTP_PROXY` and `http_proxy` are supported; uppercase takes precedence.
+</ParamField>
+
+<ParamField path="HTTPS_PROXY" type="string">
+  Outbound proxy for HTTPS requests. Format: `http://[user:password@]host:port`. Applies to all external API calls: Google Calendar, Microsoft Graph, CalDAV, OAuth, and webhook deliveries.
+</ParamField>
+
+<ParamField path="NO_PROXY" type="string">
+  Comma-separated hosts, domains, or CIDRs to bypass the proxy. Supports wildcards (`*.internal.com`) and CIDR notation (`10.0.0.0/8`).
+
+  **Example:** `localhost,127.0.0.1,*.internal.company.com,10.0.0.0/8`
+</ParamField>
+
+## Telegram notifications
+
+<ParamField path="TELEGRAM_ENABLED" type="boolean" default="false">
+  Enable the Telegram notification integration in own-bot mode. When enabled, users can connect their personal Telegram bot to receive booking notifications by supplying their own bot token and chat ID.
+</ParamField>
+
+## Slack notifications
+
+<ParamField path="SLACK_ENABLED" type="boolean" default="false">
+  Enable Slack notification integration in webhook-URL mode. When `true` and no `SLACK_CLIENT_ID` is provided, users can paste an Incoming Webhook URL from their own Slack app.
+</ParamField>
+
+<ParamField path="SLACK_CLIENT_ID" type="string">
+  Slack App client ID for OAuth mode. Setting this enables Slack notifications and activates the "Add to Slack" OAuth button in the dashboard. Create a Slack App at [api.slack.com/apps](https://api.slack.com/apps) with scopes `chat:write`, `chat:write.public`, `channels:read`, `groups:read`, `team:read`. Redirect URL: `<your-domain>/api/slack/oauth/callback`
+</ParamField>
+
+<ParamField path="SLACK_CLIENT_SECRET" type="string">
+  Slack App client secret. **Required alongside `SLACK_CLIENT_ID`** to activate full OAuth mode.
+</ParamField>
+
+## Admin alerts
+
+<ParamField path="ADMIN_ALERTS_ENABLED" type="boolean" default="false">
+  Enable operational admin alerts delivered by email. When enabled, Tymeslot emails `ADMIN_ALERT_EMAIL` on events such as webhook processing failures, integration health issues, and background job errors. Both this flag and `ADMIN_ALERT_EMAIL` must be set for delivery.
+</ParamField>
+
+<ParamField path="ADMIN_ALERT_EMAIL" type="string">
+  Recipient address for admin alert emails. **Required when `ADMIN_ALERTS_ENABLED=true`.**
+
+  **Example:** `admin@yourdomain.com`
+</ParamField>
+
+## Booking analytics
+
+<ParamField path="ANALYTICS_SALT_SECRET" type="string">
+  Secret that keys the cookie-less daily visitor fingerprint. **Required only when booking analytics is enabled** (`config :tymeslot, :booking_analytics_enabled, true`). The app fails fast at boot if analytics is enabled and this variable is missing.
+
+  Generate **once** and keep constant across deployments — changing it re-hashes the same visitor and double-counts uniques:
+
+  ```bash
+  openssl rand -base64 48 | tr -d '\n'
+  ```
+</ParamField>
+
+## Stripe payments
+
+<ParamField path="STRIPE_SECRET_KEY" type="string">
+  Stripe secret API key. Required when `MEETING_PAYMENTS_ENABLED=true`. Enables paid booking sessions via Stripe Connect.
+</ParamField>
+
+<ParamField path="STRIPE_WEBHOOK_SECRET" type="string">
+  Stripe webhook signing secret for verifying incoming webhook events. Recommended when Stripe is enabled; without it, webhook signature verification is disabled (a warning is logged at startup).
+</ParamField>
+
+<ParamField path="STRIPE_CONNECT_WEBHOOK_SECRET" type="string">
+  Stripe Connect webhook signing secret, separate from the platform webhook secret. Used to verify events from connected accounts.
+</ParamField>
+
+<ParamField path="MEETING_PAYMENTS_ENABLED" type="boolean" default="false">
+  Opt in to the meeting payments feature. Requires `STRIPE_SECRET_KEY` and `STRIPE_CONNECT_WEBHOOK_SECRET`.
+</ParamField>
+
+<ParamField path="MEETING_PAYMENTS_DEFAULT_COUNTRY" type="string">
+  Default two-letter ISO country code for Stripe Connect onboarding, e.g. `us`. When unset, users select their country during onboarding.
+</ParamField>
+
+<ParamField path="MEETING_PAYMENTS_APPLICATION_FEE_BP" type="integer" default="0">
+  Platform application fee in basis points (100 = 1%). Range `0`–`10000`. Defaults to `0` so no platform cut is taken unless the operator explicitly sets a value.
+</ParamField>

@@ -1,0 +1,284 @@
+---
+title: "Deploy Tymeslot with Docker in One Command"
+sidebarTitle: "Docker"
+description: "Run Tymeslot on any Linux server with Docker. Includes embedded PostgreSQL — no separate database setup required. Get running in under 5 minutes."
+---
+
+Tymeslot ships as a single Docker image with PostgreSQL embedded — there's nothing else to install or wire up. One `docker run` command pulls the image, starts the database, runs migrations, and brings up the Phoenix web server. You can be taking bookings in under five minutes on any machine that has Docker installed.
+
+## System requirements
+
+| Requirement | Minimum | Recommended |
+|---|---|---|
+| Docker | 20.10+ | Latest stable |
+| RAM | 500 MB | 1 GB |
+| Disk | 1 GB free | 5 GB+ |
+| OS | Any Linux (64-bit) | Ubuntu 22.04 / Debian 12 |
+
+A domain name is optional for local testing but required for a production deployment with SSL. For reverse proxy setup (Nginx, Caddy, Traefik), see the [Reverse Proxy Setup](https://tymeslot.app/docs/reverse-proxy) guide.
+
+## Choose your install path
+
+<Tabs>
+  <Tab title="Option A — Prebuilt image">
+    The fastest way to get started. Docker pulls the published image from Docker Hub automatically.
+
+    <Warning>
+      **Keep `tymeslot_pg` as a named volume.** Swapping it for a host path (e.g. `./pgdata:/var/lib/postgresql/data`) can break first-run initialisation on Docker Desktop, rootless Docker, userns-remap, or SELinux-enforcing hosts because the mount arrives with an ownership the container can't change. If you need the database on a specific host path, use an [external PostgreSQL](https://tymeslot.app/docs/env-reference) instance instead.
+    </Warning>
+
+    <Warning>
+      **Email defaults to silent discard.** Without email configuration, `EMAIL_ADAPTER` defaults to `test`, which **drops every message** — password resets, booking confirmations, and reminders all vanish with no error. Configure SMTP or Postmark before going live. See the [SMTP guide](https://tymeslot.app/docs/email-smtp) and [Postmark guide](https://tymeslot.app/docs/email-postmark).
+    </Warning>
+
+    Run the following command to start Tymeslot with SMTP email configured:
+
+    ```bash
+    docker run -d \
+      --name tymeslot \
+      -p 4000:4000 \
+      -e SECRET_KEY_BASE="$(openssl rand -base64 64 | tr -d '\n')" \
+      -e PHX_HOST=localhost \
+      -e EMAIL_ADAPTER=smtp \
+      -e EMAIL_FROM_NAME="Tymeslot" \
+      -e EMAIL_FROM_ADDRESS="noreply@yourdomain.com" \
+      -e SMTP_HOST="smtp.example.com" \
+      -e SMTP_PORT=587 \
+      -e SMTP_USERNAME="your-smtp-username" \
+      -e SMTP_PASSWORD="your-smtp-password" \
+      -v tymeslot_data:/app/data \
+      -v tymeslot_pg:/var/lib/postgresql/data \
+      luka1thb/tymeslot:latest
+    ```
+
+    Wait 30–60 seconds for PostgreSQL to initialise, then open [http://localhost:4000](http://localhost:4000).
+
+    To pin a specific version instead of `latest`, replace the tag with a release number — e.g. `luka1thb/tymeslot:1.2.0`. The full list of published tags is on [Docker Hub](https://hub.docker.com/r/luka1thb/tymeslot/tags).
+
+    <Tip>
+      The embedded PostgreSQL listens only on `localhost` inside the container and is never exposed externally. If you omit `POSTGRES_PASSWORD` it defaults to `tymeslot`, which is fine for the embedded database. Set a strong password only when pointing Tymeslot at an external database via `DATABASE_HOST`.
+    </Tip>
+  </Tab>
+
+  <Tab title="Option B — Build from source">
+    Clone the repository, configure your `.env` file, then build and run with Docker Compose. Use this path when you want to pin your own image or run a custom fork.
+
+    <Steps>
+      <Step title="Clone the repository">
+        ```bash
+        git clone https://github.com/Tymeslot/tymeslot.git
+        cd tymeslot
+        ```
+      </Step>
+
+      <Step title="Configure your environment">
+        Copy the example environment file and generate the required secrets:
+
+        ```bash
+        cp .env.example .env
+        ```
+
+        Generate secrets for the required variables:
+
+        ```bash
+        # For SECRET_KEY_BASE (must be 64+ characters)
+        openssl rand -base64 64 | tr -d '\n'
+
+        # For POSTGRES_PASSWORD
+        openssl rand -base64 32 | tr -d '\n'
+        ```
+
+        Open `.env` and fill in the required values:
+
+        ```bash
+        # REQUIRED: Must be at least 64 characters
+        SECRET_KEY_BASE=<paste_generated_secret>
+
+        # REQUIRED: Your domain (or "localhost" for testing)
+        PHX_HOST=localhost
+
+        # REQUIRED: Database credentials
+        POSTGRES_DB=tymeslot
+        POSTGRES_USER=tymeslot
+        POSTGRES_PASSWORD=<paste_generated_password>
+
+        # OPTIONAL: Port (defaults to 4000)
+        PORT=4000
+        ```
+
+        <Warning>
+          **Email defaults to silent discard.** Without email configuration, `EMAIL_ADAPTER` defaults to `test`, which **drops every message**. Add SMTP or Postmark variables to `.env` before going live.
+        </Warning>
+      </Step>
+
+      <Step title="Build and start the container">
+        <CodeGroup>
+          ```bash Docker Compose (recommended)
+          docker compose up -d --build
+          ```
+
+          ```bash Build script
+          ./build-docker.sh
+          ```
+
+          ```bash Manual Docker commands
+          # Build the image
+          docker build -f Dockerfile.docker -t tymeslot .
+
+          # Run the container
+          source .env
+          docker run -d \
+            --name tymeslot \
+            -p ${PORT:-4000}:${PORT:-4000} \
+            --env-file .env \
+            -v tymeslot_data:/app/data \
+            -v tymeslot_pg:/var/lib/postgresql/data \
+            tymeslot
+          ```
+        </CodeGroup>
+
+        Docker Compose reads your `.env`, builds the image, and starts the container with the `tymeslot_data` and `tymeslot_pg` volumes.
+      </Step>
+
+      <Step title="Wait for initialisation">
+        Startup takes 30–60 seconds on first run (PostgreSQL initialisation + database migrations). Watch progress with:
+
+        ```bash
+        docker logs -f tymeslot
+        ```
+
+        Look for the line: `Running TymeslotWeb.Endpoint` — that's your signal that the server is ready.
+      </Step>
+
+      <Step title="Open the app">
+        Visit [http://localhost:4000](http://localhost:4000) (or whatever `PORT` you set). Create your first account — it will be automatically promoted to admin.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Becoming an admin
+
+The first user to register on a fresh install is automatically promoted to admin. To promote additional users — or recover access if no admin exists — run the release helper from inside the container:
+
+```bash
+docker exec -it tymeslot bin/tymeslot rpc 'Tymeslot.Release.promote_admin("you@example.com")'
+```
+
+The user must already have an account. To demote an admin or list all current admins, see [ADMIN.md](https://github.com/Tymeslot/tymeslot/blob/main/docs/ADMIN.md).
+
+## Common commands
+
+```bash
+# Stream logs
+docker logs -f tymeslot
+
+# Stop the container
+docker stop tymeslot
+
+# Start a stopped container
+docker start tymeslot
+
+# Restart
+docker restart tymeslot
+
+# Open a bash shell
+docker exec -it tymeslot /bin/bash
+
+# Open an Elixir remote console
+docker exec -it tymeslot bin/tymeslot remote
+
+# Remove the container (volumes are preserved)
+docker stop tymeslot && docker rm tymeslot
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Container won't start">
+    Check the logs first — they usually tell you exactly what's wrong:
+
+    ```bash
+    docker logs tymeslot
+    ```
+
+    Common causes:
+    - `SECRET_KEY_BASE` is missing or fewer than 64 characters
+    - Port 4000 is already in use on the host
+    - Insufficient disk space
+
+    Verify your configuration variables:
+
+    ```bash
+    source .env
+    echo "SECRET_KEY_BASE length: ${#SECRET_KEY_BASE}"  # Should be >= 64
+    echo "PHX_HOST: $PHX_HOST"
+    echo "POSTGRES_PASSWORD set: $([ -n "$POSTGRES_PASSWORD" ] && echo 'Yes' || echo 'No')"
+    ```
+  </Accordion>
+
+  <Accordion title="Can't access the app in the browser">
+    The container needs 30–60 seconds to initialise on first run. Watch the logs and wait for `Running TymeslotWeb.Endpoint`:
+
+    ```bash
+    docker logs -f tymeslot
+    ```
+
+    If you see that line but the browser still can't connect, check that you're using the right port (default `4000`) and that no firewall rule is blocking it.
+  </Accordion>
+
+  <Accordion title="Database issues">
+    Check that PostgreSQL is running inside the container:
+
+    ```bash
+    docker exec -it tymeslot ps aux | grep postgres
+    ```
+
+    Verify the database connection:
+
+    ```bash
+    docker exec -it tymeslot su - postgres -c "psql -U $POSTGRES_USER -d $POSTGRES_DB -c 'SELECT version();'"
+    ```
+
+    To reset the database entirely (destroys all data — stop the container first, as the volume can't be removed while in use):
+
+    ```bash
+    docker rm -f tymeslot
+    docker volume rm tymeslot_pg
+    ```
+  </Accordion>
+
+  <Accordion title="initdb: could not change permissions — Operation not permitted">
+    This error appears on first start when the PostgreSQL volume is bind-mounted at `/var/lib/postgresql/data` with ownership the container can't change. It's common on Docker Desktop, rootless Docker, and SELinux-enforcing hosts.
+
+    Fixes in order of preference:
+
+    1. **Use the named volume from the quick-start** (`-v tymeslot_pg:/var/lib/postgresql/data`). Named volumes live inside Docker's own storage and are immune to host filesystem ownership quirks.
+    2. **If you need the data on a specific host path**, run PostgreSQL externally and point Tymeslot at it with `DATABASE_HOST`.
+    3. **If a previous first-run attempt crashed**, remove the partially-initialised volume before retrying: `docker volume rm tymeslot_pg`.
+  </Accordion>
+
+  <Accordion title="Port already in use">
+    Find what's occupying port 4000:
+
+    ```bash
+    sudo lsof -i :4000
+    ```
+
+    Either stop the conflicting service, or change the port Tymeslot listens on:
+
+    ```bash
+    # In your .env file or -e flag:
+    PORT=8080
+    ```
+
+    Then update your `docker run` command accordingly: `-p 8080:8080`.
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+- **Configure email** — test password reset to verify delivery is working.
+- **Set up a reverse proxy** — see the [Reverse Proxy Setup](https://tymeslot.app/docs/reverse-proxy) guide for Nginx and Caddy walkthroughs with SSL.
+- **Connect calendar integrations** — Google Calendar and Outlook from **Dashboard → Integrations**.
+- **Full environment variable reference** — every supported variable with annotations lives in the [Environment Variable Reference](https://tymeslot.app/docs/env-reference).

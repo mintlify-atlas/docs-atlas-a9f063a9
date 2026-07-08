@@ -1,0 +1,399 @@
+---
+title: "Build Custom Booking Page Themes for Tymeslot"
+sidebarTitle: "Themes"
+description: "Create new booking page themes using Tymeslot's theme behaviour, shared state machine, and CSS module system. Ships with Quill and Rhythm themes."
+---
+
+Tymeslot's booking pages are fully themeable. The theme system is built on an Elixir behaviour contract, a centralized catalog and registry, and a modular CSS architecture — giving each theme complete visual independence while sharing all booking logic. Tymeslot ships with two themes: **Quill** (glassmorphism aesthetic) and **Rhythm** (full-bleed video backgrounds). You can build additional themes using the same patterns.
+
+## Architecture overview
+
+The theme system has six primary layers, each with a distinct responsibility:
+
+| Module | Layer | Responsibility |
+|---|---|---|
+| `Tymeslot.Themes.Catalog` | Domain | Source of truth for theme *facts*: `id`, `key`, `name`, `features`, `status`. No web references. |
+| `TymeslotWeb.Themes.Core.Registry` | Web | Merges catalog facts with presentation bindings (LiveView module, CSS file path, preview image). |
+| `TymeslotWeb.Themes.Core.Behaviour` | Web | Elixir behaviour all theme modules must implement. |
+| `TymeslotWeb.Themes.Shared.SchedulingLive` | Web | Macro that injects all common LiveView callbacks into a theme's `live.ex`. |
+| `TymeslotWeb.Themes.Shared.StateMachineHelpers` | Web | Shared state transitions and navigation guards for all themes. |
+| `TymeslotWeb.Themes.Core.Dispatcher` | Web | Dynamically loads and dispatches to the correct theme based on a user's profile setting. |
+
+<Note>
+  There is **no per-theme `state_machine.ex`**. State transitions live entirely in the shared `TymeslotWeb.Themes.Shared.StateMachineHelpers`. Both Quill and Rhythm have removed their local state machines. Do not create a new `state_machine.ex` file for your theme.
+</Note>
+
+## Required file structure
+
+A complete theme requires these files under `lib/tymeslot_web/themes/[theme_name]/` and `assets/css/scheduling/themes/[theme_name]/`:
+
+```
+lib/tymeslot_web/themes/[theme_name]/
+├── theme.ex                            # Behaviour implementation
+├── scheduling/
+│   ├── live.ex                         # LiveView (uses the SchedulingLive macro)
+│   ├── wrapper.ex                      # Theme layout wrapper component
+│   └── components/
+│       ├── overview_component.ex       # Step 1: meeting type / duration selection
+│       ├── schedule_component.ex       # Step 2: calendar + time slot picker
+│       ├── custom_questions_component.ex # Conditional step: custom fields
+│       ├── booking_component.ex        # Step 3: attendee details form
+│       └── confirmation_component.ex   # Step 4: confirmation screen
+└── meeting/
+    ├── reschedule.ex                   # Reschedule action page
+    ├── cancel.ex                       # Cancellation action page
+    └── cancel_confirmed.ex             # Post-cancellation confirmation
+
+assets/css/scheduling/themes/[theme_name]/
+├── theme.css                           # Entry point — imports shared primitives + modules
+└── modules/
+    ├── variables.css                   # Design tokens (colours, spacing, typography)
+    ├── base.css                        # Root layout, theme wrapper, container query context
+    ├── iframe.css                      # iframe-specific shell rules
+    └── ...                            # Additional component modules
+```
+
+Themes may add extra internal structure beyond the above. Quill nests additional panel components under `scheduling/components/schedule/panels.ex`; Rhythm keeps a `shared/` directory for components reused only within that theme.
+
+## Step 1 — Register the theme
+
+Registration is split across two modules so the dependency only flows web → domain.
+
+**a. Add theme facts to the catalog** (`lib/tymeslot/themes/catalog.ex`):
+
+```elixir
+aurora: %{
+  id: "3",
+  key: :aurora,
+  name: "Aurora",
+  description: "Beautiful northern lights theme",
+  features: %{
+    supports_video_background: true,
+    supports_image_background: true,
+    supports_gradient_background: true,
+    supports_custom_colors: true,
+    flow_type: :multi_step,
+    step_count: 4
+  },
+  status: :active
+}
+```
+
+**b. Add presentation bindings** (`lib/tymeslot_web/themes/core/registry.ex`, keyed by theme `id`):
+
+```elixir
+"3" => %{
+  module: TymeslotWeb.Themes.Aurora.Theme,
+  css_file: "/assets/scheduling-theme-aurora.css",
+  preview_image: "/images/themes/aurora-preview.png"
+}
+```
+
+`Registry` merges the two at compile time into the full `theme_definition` the web layer consumes. Domain code reads facts directly from `Catalog` and never reaches into the web layer.
+
+## Step 2 — Implement the theme behaviour
+
+Your `theme.ex` must implement all callbacks from `TymeslotWeb.Themes.Core.Behaviour`:
+
+```elixir
+defmodule TymeslotWeb.Themes.Aurora.Theme do
+  @moduledoc "Aurora theme — 4-step booking flow with northern lights design."
+
+  @behaviour TymeslotWeb.Themes.Core.Behaviour
+
+  alias TymeslotWeb.Themes.Aurora.Scheduling.Components.{
+    BookingComponent,
+    ConfirmationComponent,
+    CustomQuestionsComponent,
+    OverviewComponent,
+    ScheduleComponent
+  }
+
+  alias TymeslotWeb.Themes.Aurora.Meeting.{Cancel, CancelConfirmed, Reschedule}
+
+  @impl TymeslotWeb.Themes.Core.Behaviour
+  def states do
+    %{
+      overview:     %{step: 1, next: :schedule,     prev: nil},
+      schedule:     %{step: 2, next: :booking,      prev: :overview},
+      booking:      %{step: 3, next: :confirmation, prev: :schedule},
+      confirmation: %{step: 4, prev: :booking}
+    }
+  end
+
+  @impl TymeslotWeb.Themes.Core.Behaviour
+  def css_file, do: "/assets/scheduling-theme-aurora.css"
+
+  @impl TymeslotWeb.Themes.Core.Behaviour
+  def components do
+    %{
+      overview:     OverviewComponent,
+      schedule:     ScheduleComponent,
+      questions:    CustomQuestionsComponent,
+      booking:      BookingComponent,
+      confirmation: ConfirmationComponent
+    }
+  end
+
+  @impl TymeslotWeb.Themes.Core.Behaviour
+  def live_view_module, do: TymeslotWeb.Themes.Aurora.Scheduling.Live
+
+  @impl TymeslotWeb.Themes.Core.Behaviour
+  def theme_config do
+    %{
+      name: "Aurora",
+      description: "Northern lights theme with smooth animations.",
+      preview_image: "/images/ui/theme-previews/aurora-theme-preview.webp",
+      flow_steps: 4,
+      supports_duration_selection: true,
+      supports_inline_booking: false
+    }
+  end
+
+  @impl TymeslotWeb.Themes.Core.Behaviour
+  def validate_theme do
+    required = [:overview, :schedule, :booking, :confirmation]
+    missing  = Enum.filter(required, &(not Code.ensure_loaded?(components()[&1])))
+
+    if Enum.empty?(missing),
+      do: :ok,
+      else: {:error, "Missing components: #{inspect(missing)}"}
+  end
+
+  @impl TymeslotWeb.Themes.Core.Behaviour
+  def initial_state_for_action(live_action) do
+    case live_action do
+      :index        -> :overview
+      :overview     -> :overview
+      :schedule     -> :schedule
+      :booking      -> :booking
+      :confirmation -> :confirmation
+      _other        -> :overview
+    end
+  end
+
+  @impl TymeslotWeb.Themes.Core.Behaviour
+  def supports_feature?(feature) do
+    case feature do
+      :duration_selection -> true
+      :inline_booking     -> false
+      :step_navigation    -> true
+      :video_background   -> true
+      _other              -> false
+    end
+  end
+
+  @impl TymeslotWeb.Themes.Core.Behaviour
+  def render_meeting_action(assigns, action) do
+    case action do
+      :reschedule      -> Reschedule.render(assigns)
+      :cancel          -> Cancel.render(assigns)
+      :cancel_confirmed -> CancelConfirmed.render(assigns)
+      _other           -> raise "Unsupported meeting action: #{action}"
+    end
+  end
+end
+```
+
+### Required behaviour callbacks
+
+| Callback | Return type | Purpose |
+|---|---|---|
+| `states/0` | `map()` | Step graph with `:step`, `:next`, `:prev` keys |
+| `css_file/0` | `String.t()` | Absolute path to the compiled CSS bundle |
+| `components/0` | `map()` | Maps state atoms to LiveComponent modules |
+| `live_view_module/0` | `module()` | The theme's `Scheduling.Live` module |
+| `theme_config/0` | `map()` | Display metadata (name, description, preview image) |
+| `validate_theme/0` | `:ok \| {:error, String.t()}` | Compile-time self-check |
+| `initial_state_for_action/1` | `atom()` | Maps a `live_action` atom to the initial step state |
+| `supports_feature?/1` | `boolean()` | Feature capability queries |
+| `render_meeting_action/2` | `Phoenix.LiveView.Rendered.t()` | Dispatches cancel/reschedule renders |
+
+## Step 3 — Build the LiveView
+
+Use the `SchedulingLive` macro. It injects `mount/3`, `handle_params/3`, all `handle_info/2` clauses, and the standard `handle_event/3` handlers. Your `live.ex` only needs `render/1` and, optionally, `handle_theme_event/3` or `handle_theme_schedule_event/3` overrides for theme-specific events.
+
+```elixir
+defmodule TymeslotWeb.Themes.Aurora.Scheduling.Live do
+  use TymeslotWeb.Themes.Shared.SchedulingLive, theme_id: "3"
+
+  alias TymeslotWeb.Themes.Aurora.Scheduling.Components.{
+    BookingComponent, ConfirmationComponent,
+    CustomQuestionsComponent, OverviewComponent, ScheduleComponent
+  }
+  alias TymeslotWeb.Themes.Aurora.Scheduling.Wrapper, as: AuroraWrapper
+  alias TymeslotWeb.Themes.Shared.Components.AwaitingPayment
+
+  @impl Phoenix.LiveView
+  def render(assigns) do
+    ~H"""
+    <AuroraWrapper.aurora_wrapper
+      custom_css={assigns[:custom_css]}
+      theme_customization={assigns[:theme_customization]}
+      locale={assigns[:locale]}
+      language_dropdown_open={assigns[:language_dropdown_open]}
+      current_state={assigns[:current_state]}
+      organizer_user_id={@organizer_user_id}
+      should_show_branding={assigns[:should_show_branding]}
+    >
+      <%= case assigns[:current_state] || :overview do %>
+        <% :overview -> %>
+          <.live_component module={OverviewComponent} id="overview-step" {assigns} />
+        <% :schedule -> %>
+          <.live_component module={ScheduleComponent} id="schedule-step" {assigns} />
+        <% :questions -> %>
+          <.live_component module={CustomQuestionsComponent} id="questions-step" {assigns} />
+        <% :booking -> %>
+          <.live_component module={BookingComponent} id="booking-step" {assigns} />
+        <% :awaiting_payment -> %>
+          <AwaitingPayment.awaiting_payment checkout_url={@awaiting_payment_checkout_url} />
+        <% :confirmation -> %>
+          <.live_component module={ConfirmationComponent} id="confirmation-step" {assigns} />
+        <% _ -> %>
+          <.live_component module={OverviewComponent} id="overview-step" {assigns} />
+      <% end %>
+    </AuroraWrapper.aurora_wrapper>
+    """
+  end
+end
+```
+
+Your `render/1` must handle **all states** the shared state machine can produce, including the two conditional states:
+
+- **`:questions`** — inserted between `:schedule` and `:booking` when the meeting type has custom fields (`StateMachineHelpers.states_for/1` controls this)
+- **`:awaiting_payment`** — a transitional state for paid embedded bookings while Stripe Checkout is open in another tab
+- **`_` fallback** — renders the overview as a safe default
+
+## Step 4 — Create CSS modules
+
+Each theme's CSS is completely isolated from the global app styles.
+
+```css
+/* assets/css/scheduling/themes/aurora/theme.css */
+
+/* Import shared structural primitives */
+@import "../../shared/reset.css";
+@import "../../shared/layout.css";
+@import "../../shared/utilities.css";
+
+/* Foundation — variables MUST come first */
+@import "./modules/variables.css";
+@import "./modules/base.css";
+@import "./modules/iframe.css";
+@import "./modules/typography.css";
+
+/* Feature modules (order among these is not significant) */
+@import "./modules/schedule-header.css";
+@import "./modules/calendar.css";
+@import "./modules/time-slots.css";
+@import "./modules/booking-form.css";
+@import "./modules/custom-questions.css";
+@import "./modules/overview.css";
+@import "./modules/confirmation.css";
+@import "./modules/payment-pages.css";
+@import "./modules/language-switcher.css";
+```
+
+The module split is per-theme, not canonical. Quill breaks UI controls into many small files (`glass-card.css`, `buttons.css`, `animations.css`, etc.); Rhythm consolidates them into a single `components.css`. Match whichever granularity suits your theme. The only universally expected modules are `variables.css`, `base.css`, and `iframe.css`.
+
+### Intrinsic responsiveness
+
+Themes use **CSS container queries** and **fluid sizing** instead of viewport breakpoints. Set `container-type: inline-size; container-name: scheduling;` on your primary content container (e.g. `.aurora-card`), then use `@container scheduling (...)` queries in each component file.
+
+```css
+/* Fluid padding that scales with container width */
+.aurora-step { padding: clamp(0.75rem, 3cqi, 1.5rem); }
+
+/* Fluid grid */
+.time-slots { grid-template-columns: repeat(auto-fit, minmax(5rem, 1fr)); }
+
+/* Discrete layout switch */
+@container scheduling (min-width: 480px) {
+  .calendar-monthly { display: grid; }
+  .calendar-weekly  { display: none; }
+}
+```
+
+Do not use responsive Tailwind classes (`sm:`, `md:`, `lg:`) in theme templates. Use semantic CSS class names describing what the element *is* (`.calendar-grid`, `.duration-card`), not how it looks.
+
+### `iframe.css` requirements
+
+Each theme needs a small `iframe.css` (~30 lines) for iframe-specific overrides:
+
+```css
+[data-embedded] body {
+  height: max-content; /* Allows iframe_embed.js to measure content height */
+}
+
+[data-embedded] .aurora-card {
+  width: 100%;
+  max-width: 100%;
+  border-radius: 0;
+  border: none;
+}
+```
+
+## Step 5 — Test the theme
+
+Run the production checklist to verify your theme end-to-end:
+
+```bash
+# Test all registered themes
+mix test apps/tymeslot/test/tymeslot_web/live/themes/theme_production_checklist_test.exs
+
+# Test a specific theme by ID
+mix test apps/tymeslot/test/tymeslot_web/live/themes/theme_production_checklist_test.exs -t theme_id:3
+```
+
+The checklist automatically verifies that all meeting types render, edge cases are handled (no meetings, long names), basic mobile responsiveness works, and state transitions function correctly.
+
+## Shared helpers reference
+
+You rarely write event-handling, initialization, or formatting code by hand — the `SchedulingLive` macro wires everything up. These are the underlying modules it calls, documented for when you need to override or extend behaviour:
+
+| Module | Key functions |
+|---|---|
+| `StateMachineHelpers` | `default_states/0`, `states_for/1`, `determine_initial_state/1`, `validate_state_transition/3`, `can_navigate_to_step?/3` |
+| `SchedulingInit` | `assign_theme_state/2` (preferred — initialises all scheduling assigns), `assign_base_state/1` (core assigns only) |
+| `BookingFlow` | `handle_form_validation/2`, `submit_booking/3` — handles spam prevention, rate limiting, errors |
+| `LocalizationHelpers` | `format_date/1`, `format_duration/1`, `format_booking_datetime/3`, `format_time_by_locale/1` (respects 12h/24h), `day_name_short/1` |
+| `CalendarHelpers` | `get_week_days/4`, `handle_week_navigation/2`, `display_range/2` |
+| `CalendarNavigation` | `prev_month_disabled?/3`, `next_month_disabled?/4`, `prev_week_disabled?/2`, `next_week_disabled?/3` — wire to nav button `disabled` attributes |
+| `PathHandlers` | `build_path_with_locale/2`, `organizer_scheduling_path/1` for back-links on cancel/reschedule pages |
+| `Customization.Helpers` | `prepare_wrapper_assigns/1` (derives `@has_video_background`, `@video_poster`, `@show_language_switcher`), `get_background_style/1` |
+| `Shared.Components.MeetingDetails` | `meeting_detail_rows/1` — shared row layout for cancel/reschedule pages |
+| `Shared.Components.AwaitingPayment` | `awaiting_payment/1` — shared placeholder for the `:awaiting_payment` state |
+| `VideoSources` | `<.video_sources theme_customization={...} />` — `<source>` elements for video backgrounds |
+| `Tymeslot.Timezones` | `Timezones.format/1` — human-readable timezone display on confirmation and booking steps |
+
+## Customization capabilities
+
+Declare which background types your theme supports in the `features` map in `Catalog`:
+
+| Feature flag | What it enables |
+|---|---|
+| `supports_video_background` | Preset and user-uploaded video backgrounds |
+| `supports_image_background` | Preset and user-uploaded image backgrounds |
+| `supports_gradient_background` | CSS gradient background presets |
+| `supports_custom_colors` | User-selectable primary colour via CSS variable injection |
+
+The `Tymeslot.ThemeCustomizations.Capability` module reads these flags and generates the correct CSS variables based on the user's selection. The `custom_css` string arrives as a ready-to-emit socket assign — render it inside a `:root { … }` `<style>` block in your wrapper; do not generate it yourself.
+
+## Pre-completion checklist
+
+Before submitting a new theme, verify every item below:
+
+- [ ] Theme facts added to `Catalog`; bindings added to `Registry`
+- [ ] `theme.ex` implements all nine behaviour callbacks
+- [ ] `live.ex` uses `use TymeslotWeb.Themes.Shared.SchedulingLive, theme_id: "N"` — no per-theme `StateMachine`
+- [ ] Wrapper component uses `prepare_wrapper_assigns/1` and `get_background_style/1`
+- [ ] All five step components implemented (overview, schedule, custom_questions, booking, confirmation)
+- [ ] `render/1` handles `:questions`, `:awaiting_payment`, and `_` fallback states
+- [ ] Schedule component has weekly strip (mobile) + monthly grid (desktop), nav buttons wired to `CalendarNavigation`
+- [ ] All three meeting action components implemented; `meeting_detail_rows/1` used for the detail layout
+- [ ] `theme.css` imports shared primitives and all modules; `variables.css` imported first
+- [ ] `modules/iframe.css` created with `[data-embedded]`-scoped rules; `height: max-content` on body
+- [ ] Container query context (`container-type: inline-size`) set on the primary content container
+- [ ] No responsive Tailwind classes (`sm:`, `md:`, `lg:`) in templates
+- [ ] No external font imports (system fonts or self-hosted only)
+- [ ] Production checklist tests pass

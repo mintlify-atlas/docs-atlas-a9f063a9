@@ -1,0 +1,125 @@
+---
+title: "Slack and Telegram Booking Notifications"
+sidebarTitle: "Notifications"
+description: "Send booking alerts to Slack channels or Telegram chats. Enable at the instance level with environment variables; users configure their own tokens in the dashboard."
+---
+
+Tymeslot supports two external notification channels — Telegram and Slack — that send alerts when meetings are booked, cancelled, or rescheduled. Both integrations are **disabled by default** and must be enabled by the instance administrator using environment variables. Once enabled at the instance level, each user connects their own credentials through their personal dashboard. This page covers how to enable each integration and what environment variables to set.
+
+<Tabs>
+  <Tab title="Telegram">
+    ## Enabling Telegram
+
+    Set `TELEGRAM_ENABLED=true` in your environment to make the Telegram integration available to all users on the instance:
+
+    ```bash
+    TELEGRAM_ENABLED=true
+    ```
+
+    When this flag is set, a Telegram section appears in each user's dashboard notifications settings. Each user connects their own personal Telegram bot token — there are no admin-level Telegram credentials to configure. Users follow Telegram's standard bot creation flow (via [@BotFather](https://t.me/botfather)) and paste their token into the dashboard.
+
+    No further server-side configuration is required beyond the single environment variable.
+  </Tab>
+
+  <Tab title="Slack">
+    ## Enabling Slack
+
+    Tymeslot supports two Slack connection modes. Choose the one that fits your deployment:
+
+    ### Webhook URL mode (simpler)
+
+    Set `SLACK_ENABLED=true` without providing OAuth credentials. In this mode, users paste an [Incoming Webhook URL](https://api.slack.com/messaging/webhooks) from their own Slack app to receive notifications in a channel of their choice.
+
+    ```bash
+    SLACK_ENABLED=true
+    ```
+
+    This mode requires no Slack app credentials on the server. It is suitable for personal use or small teams where each user manages their own Slack app.
+
+    ### OAuth mode (recommended for teams)
+
+    Set `SLACK_CLIENT_ID` and `SLACK_CLIENT_SECRET` to enable OAuth mode. This activates an **"Add to Slack"** button in the user dashboard that walks through the standard Slack OAuth flow, allowing users to select a channel from a list rather than pasting a webhook URL manually.
+
+    ```bash
+    SLACK_ENABLED=true
+    SLACK_CLIENT_ID=your-slack-client-id
+    SLACK_CLIENT_SECRET=your-slack-client-secret
+    ```
+
+    Setting `SLACK_CLIENT_ID` alone enables Slack notifications; providing both `SLACK_CLIENT_ID` and `SLACK_CLIENT_SECRET` fully activates OAuth mode with the "Add to Slack" button and channel picker.
+
+    #### Creating a Slack app for OAuth mode
+
+    <Steps>
+      <Step title="Create a new Slack app">
+        Go to [api.slack.com/apps](https://api.slack.com/apps) and click **Create New App**. Choose **From scratch**, give it a name (e.g. "Tymeslot"), and select your workspace.
+      </Step>
+
+      <Step title="Add bot token scopes">
+        In your app settings, go to **OAuth & Permissions** → **Scopes** → **Bot Token Scopes** and add the following scopes:
+
+        ```
+        chat:write
+        chat:write.public
+        channels:read
+        groups:read
+        team:read
+        ```
+      </Step>
+
+      <Step title="Set the OAuth redirect URL">
+        Still in **OAuth & Permissions**, add a redirect URL under **Redirect URLs**:
+
+        ```
+        https://<your-domain>/api/slack/oauth/callback
+        ```
+
+        Replace `<your-domain>` with your actual Tymeslot hostname.
+      </Step>
+
+      <Step title="Install the app to your workspace">
+        Click **Install to Workspace** and authorise the requested permissions. Slack will generate a **Bot User OAuth Token** — you do not need this token on the server; Tymeslot handles token exchange per-user via the OAuth flow.
+      </Step>
+
+      <Step title="Copy your app credentials">
+        Go to **Basic Information** and copy the **Client ID** and **Client Secret**. Set them as environment variables:
+
+        ```bash
+        SLACK_CLIENT_ID=your-client-id
+        SLACK_CLIENT_SECRET=your-client-secret
+        ```
+      </Step>
+
+      <Step title="Restart Tymeslot">
+        Restart your container or redeploy so the new variables take effect. The **Add to Slack** button will now appear in each user's notification settings.
+      </Step>
+    </Steps>
+
+    ### Webhook URL vs OAuth mode — key differences
+
+    | | Webhook URL mode | OAuth mode |
+    |---|---|---|
+    | Server config required | `SLACK_ENABLED=true` | `SLACK_CLIENT_ID` + `SLACK_CLIENT_SECRET` |
+    | User experience | Paste a webhook URL manually | Click "Add to Slack", select a channel |
+    | Channel selection | Fixed at webhook creation time | Selectable from dashboard |
+    | Best for | Individual users, simple setups | Teams sharing an instance |
+  </Tab>
+</Tabs>
+
+## Admin operational alerts
+
+In addition to per-user booking notifications, Tymeslot can send operational alerts to an admin email address when background issues occur — such as webhook delivery failures, integration health problems, or background job errors.
+
+Both environment variables must be set for delivery to work:
+
+```bash
+ADMIN_ALERTS_ENABLED=true
+ADMIN_ALERT_EMAIL=admin@yourdomain.com
+```
+
+| Variable | Purpose |
+|---|---|
+| `ADMIN_ALERTS_ENABLED` | Enables the admin alert system. Defaults to `false`. |
+| `ADMIN_ALERT_EMAIL` | The recipient address for operational alert emails. Required when alerts are enabled. |
+
+Admin alerts use the same email adapter as the rest of the application (`EMAIL_ADAPTER`). Make sure email delivery is configured before enabling this feature — see the [email configuration guide](/configuration/email) for SMTP and Postmark setup.

@@ -1,0 +1,104 @@
+---
+title: "Back Up and Restore Tymeslot Data"
+sidebarTitle: "Backup & Restore"
+description: "Protect your Tymeslot data by backing up the PostgreSQL database and uploaded files. Covers Docker volume backup, pg_dump, and restore procedures."
+---
+
+A self-hosted Tymeslot instance stores all of its persistent state in two places: a PostgreSQL database and an uploads directory. Both must be included in any backup strategy to ensure you can fully recover the application — losing either one means losing data. This guide covers how to back up and restore each piece using Docker volumes, `pg_dump`, and the options available on Cloudron.
+
+<Note>
+  Named volumes (e.g. `tymeslot_pg`) are strongly recommended over host-path bind mounts. Named volumes live inside Docker's own storage and avoid ownership and permission issues on Docker Desktop, rootless Docker, and SELinux-enforcing hosts.
+</Note>
+
+## What needs backing up
+
+| Volume | Default name | Contains |
+|---|---|---|
+| PostgreSQL data | `tymeslot_pg` | All application data: users, bookings, meeting types, integrations, settings |
+| Uploads and app data | `tymeslot_data` | Uploaded files, avatars, and other persistent application data |
+
+## Backing up Docker volumes
+
+The simplest way to back up both volumes is to use a temporary Alpine container to create compressed archives on your host machine.
+
+```bash
+# Back up the PostgreSQL data volume
+docker run --rm \
+  -v tymeslot_pg:/data \
+  -v $(pwd):/backup \
+  alpine tar czf /backup/tymeslot_pg.tar.gz /data
+
+# Back up the uploads and app data volume
+docker run --rm \
+  -v tymeslot_data:/data \
+  -v $(pwd):/backup \
+  alpine tar czf /backup/tymeslot_data.tar.gz /data
+```
+
+This produces two `.tar.gz` archives in your current directory. Store them in a safe, off-server location — object storage, a backup service, or an encrypted remote drive.
+
+## Backing up with pg_dump
+
+If you prefer a SQL dump rather than a volume-level snapshot, you can use `pg_dump` from inside the running container. This produces a portable, human-readable SQL file that can be restored into any compatible PostgreSQL instance.
+
+```bash
+docker exec -it tymeslot pg_dump -U tymeslot tymeslot > tymeslot_backup.sql
+```
+
+The resulting `tymeslot_backup.sql` file contains all schema and data. Combine this with a separate backup of the `tymeslot_data` volume (for uploaded files) for a complete backup set.
+
+## Restoring from a volume backup
+
+<Warning>
+  Stop the Tymeslot container before restoring a volume backup. Restoring into a live volume risks data corruption because PostgreSQL may be actively writing to the files you are replacing.
+</Warning>
+
+```bash
+# Stop and remove the running container first
+docker stop tymeslot && docker rm tymeslot
+
+# Restore the PostgreSQL data volume
+docker run --rm \
+  -v tymeslot_pg:/data \
+  -v $(pwd):/backup \
+  alpine tar xzf /backup/tymeslot_pg.tar.gz -C /
+
+# Restore the uploads and app data volume
+docker run --rm \
+  -v tymeslot_data:/data \
+  -v $(pwd):/backup \
+  alpine tar xzf /backup/tymeslot_data.tar.gz -C /
+```
+
+Once both volumes are restored, re-run your original `docker run` command (or `docker compose up -d`) to start the container. Tymeslot will boot against the restored data automatically — no manual migration step is needed.
+
+## Restoring from a SQL dump
+
+To restore from a `pg_dump` SQL file, start the container first (so PostgreSQL is running inside it), then pipe the dump in:
+
+```bash
+docker exec -i tymeslot psql -U tymeslot tymeslot < tymeslot_backup.sql
+```
+
+Remember that a SQL dump only restores database contents. If you also backed up the `tymeslot_data` volume separately, restore it using the volume method above to bring back uploaded files.
+
+## Cloudron
+
+On Cloudron, backups are handled automatically by the platform. Cloudron snapshots both the PostgreSQL database and the `/app/data` directory (which includes uploads) according to your configured backup schedule. You can trigger a manual backup and restore from any snapshot directly in the Cloudron dashboard — no shell commands required.
+
+See the [Cloudron documentation](https://docs.cloudron.io/backups/) for details on configuring backup frequency and storage destinations.
+
+## Scheduling automated backups with cron
+
+For Docker deployments, add a cron job on the host to run the volume backup commands on a regular schedule. The following example backs up both volumes daily at 2 AM and keeps archives in `/srv/backups/tymeslot`:
+
+```bash
+# Create the backup directory
+mkdir -p /srv/backups/tymeslot
+
+# Add to crontab (crontab -e)
+0 2 * * * docker run --rm -v tymeslot_pg:/data -v /srv/backups/tymeslot:/backup alpine tar czf /backup/tymeslot_pg_$(date +\%Y\%m\%d).tar.gz /data
+5 2 * * * docker run --rm -v tymeslot_data:/data -v /srv/backups/tymeslot:/backup alpine tar czf /backup/tymeslot_data_$(date +\%Y\%m\%d).tar.gz /data
+```
+
+Consider pairing this with a retention script to remove archives older than your desired retention window, and test your restore procedure periodically to confirm backups are valid.

@@ -1,0 +1,89 @@
+---
+title: "Authentication Methods in Tymeslot"
+sidebarTitle: "Overview"
+description: "Tymeslot supports email/password, Google, GitHub, and generic OIDC login. Disable registration or password auth independently without affecting OAuth integrations."
+---
+
+Tymeslot ships with a flexible authentication system designed for self-hosted deployments. You can combine email/password login with one or more social OAuth providers, lock down new registrations after your initial setup, or disable password-based login entirely while keeping OAuth flows active — all without redeploying the server.
+
+## Supported authentication methods
+
+| Method | Env var to enable | Notes |
+|---|---|---|
+| Email / password | on by default | Can be disabled from the admin UI at runtime |
+| Google OAuth | `ENABLE_GOOGLE_AUTH=true` | Requires `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` |
+| GitHub OAuth | `ENABLE_GITHUB_AUTH=true` | Requires `GITHUB_CLIENT_ID` + `GITHUB_CLIENT_SECRET` |
+| Generic OIDC / SSO | `ENABLE_OAUTH_AUTH=true` | Keycloak, Authentik, Okta, Azure AD, and any OIDC provider |
+
+## Auth login vs. integration OAuth
+
+Tymeslot uses OAuth for two distinct purposes, and it is important to understand the difference before configuring anything.
+
+**Social login** (`ENABLE_GOOGLE_AUTH`, `ENABLE_GITHUB_AUTH`, `ENABLE_OAUTH_AUTH`) controls whether users can sign in or register via a third-party identity provider. These flags are `false` by default.
+
+**Integration OAuth** (the `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` and `OUTLOOK_CLIENT_ID`/`OUTLOOK_CLIENT_SECRET` pairs) allows authenticated users to connect their Google Calendar, Outlook Calendar, Google Meet, or Microsoft Teams account for scheduling purposes. These integrations operate independently of social login.
+
+<Note>
+  Setting `ENABLE_GOOGLE_AUTH=false` does **not** prevent users from connecting Google Calendar or Google Meet. Users can still link those integrations after logging in via email/password. The two OAuth surfaces share credentials but are controlled separately.
+</Note>
+
+## Controlling new user registration
+
+By default, any visitor can create a new account. Once you have set up your initial user accounts, you can close registration to everyone else:
+
+```bash
+# .env
+REGISTRATION_ENABLED=false
+```
+
+Setting this to `false` applies to **all** authentication methods, including SSO. Existing users can still log in; only new account creation is blocked. The admin UI also lets you toggle this at runtime without a restart.
+
+## Disabling password authentication
+
+You can turn off the email/password login form while leaving OAuth providers active. This is useful in environments where all users are expected to authenticate through a corporate IdP (Keycloak, Okta, Azure AD, etc.).
+
+The `password_auth_enabled` setting is controlled from the admin UI at `/admin`. When disabled:
+- The email/password form is hidden from the login page.
+- Users with existing accounts can still log in via any configured OAuth provider.
+- Password reset flows are also suppressed.
+
+This setting has three layers of precedence — highest to lowest:
+1. **DB override** set from the `/admin` panel.
+2. **Environment variable / application config** read at boot.
+3. **Built-in default** (`true`).
+
+## Admin UI and runtime settings
+
+Navigate to `/admin` after logging in with an admin account to toggle runtime settings without redeploying:
+
+| Setting | What it controls |
+|---|---|
+| `registration_enabled` | Whether new user registration is open |
+| `password_auth_enabled` | Whether the email/password form is shown (OAuth still works when disabled) |
+
+## First-user auto-promotion
+
+The very first user to register on a fresh Tymeslot installation is automatically promoted to admin in the same database transaction. Once any user exists, the gate closes permanently. To promote additional users, use the release helper:
+
+```bash
+docker exec -it tymeslot bin/tymeslot rpc 'Tymeslot.Release.promote_admin("you@example.com")'
+```
+
+See the [Admin Guide](/operations/admin) for the full `promote_admin`, `demote_admin`, and `list_admins` reference.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="GitHub OAuth" icon="github" href="/auth/github">
+    Let users sign in with their GitHub account. Configure an OAuth App and set the callback URL.
+  </Card>
+  <Card title="OIDC / SSO" icon="key" href="/auth/oidc-sso">
+    Connect Keycloak, Authentik, Okta, Azure AD, or any OIDC-compliant identity provider.
+  </Card>
+  <Card title="reCAPTCHA" icon="shield-check" href="/auth/recaptcha">
+    Add invisible reCAPTCHA v3 protection to signup and booking forms.
+  </Card>
+  <Card title="Environment Reference" icon="gear" href="/configuration/environment-variables">
+    Complete annotated list of every supported environment variable.
+  </Card>
+</CardGroup>

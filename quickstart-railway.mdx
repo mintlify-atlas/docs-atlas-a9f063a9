@@ -1,0 +1,105 @@
+---
+title: "Deploy Tymeslot on Railway"
+sidebarTitle: "Railway"
+description: "One-click Tymeslot deployment on Railway. Managed infrastructure with automatic SSL, built-in PostgreSQL, and no server to maintain."
+---
+
+Railway is a managed deployment platform that provisions servers, handles SSL, and runs your containers without you needing to touch a VPS. Tymeslot has a one-click deploy template that provisions the app service and a PostgreSQL plugin together — you configure two environment variables, and you're live.
+
+<Note>
+  Railway runs the same release artifact as Docker. The image is identical to `luka1thb/tymeslot:latest` — there's no Railway-specific build, and every feature available in the Docker deployment is available here.
+</Note>
+
+## Deploy in five steps
+
+<Steps>
+  <Step title="Click the one-click deploy button">
+    Open the Tymeslot deploy template on Railway:
+
+    **[https://railway.com/deploy/tymeslot](https://railway.com/deploy/tymeslot)**
+
+    Railway will prompt you to log in or create an account if you haven't already.
+  </Step>
+
+  <Step title="Review the template">
+    The template provisions two services:
+    - **Tymeslot** — the application container
+    - **PostgreSQL** — a managed database plugin
+
+    Railway wires the database connection variables from the PostgreSQL plugin to the Tymeslot service automatically. You don't need to configure `DATABASE_HOST` or `POSTGRES_*` variables manually.
+  </Step>
+
+  <Step title="Set the required environment variables">
+    Before deploying, set the two required variables in the Railway dashboard under **Variables** for the Tymeslot service:
+
+    | Variable | Value | How to generate |
+    |---|---|---|
+    | `SECRET_KEY_BASE` | A random string, 64+ characters | `openssl rand -base64 64 \| tr -d '\n'` |
+    | `PHX_HOST` | Your Railway domain or custom domain | e.g. `tymeslot.up.railway.app` |
+
+    ```bash
+    # Generate SECRET_KEY_BASE locally, then paste it into Railway:
+    openssl rand -base64 64 | tr -d '\n'
+    ```
+
+    <Warning>
+      **Email defaults to silent discard.** Without email configuration, `EMAIL_ADAPTER` defaults to `test`, which **drops every message** — password resets, booking confirmations, and reminders all vanish with no error. Add SMTP or Postmark variables before going live. See the [SMTP guide](https://tymeslot.app/docs/email-smtp) and [Postmark guide](https://tymeslot.app/docs/email-postmark).
+    </Warning>
+  </Step>
+
+  <Step title="Deploy">
+    Click **Deploy**. Railway builds (or pulls) the image, provisions the PostgreSQL database, and starts the Tymeslot container. Initial startup takes 30–60 seconds while the database initialises and migrations run.
+
+    Watch progress in the Railway dashboard under **Deployments → Logs**. Look for `Running TymeslotWeb.Endpoint` to confirm the server is ready.
+  </Step>
+
+  <Step title="Open the app">
+    Railway assigns a public URL (e.g. `tymeslot.up.railway.app`) with automatic SSL. Open it in your browser and create the first account — it will be promoted to admin automatically.
+
+    <Tip>
+      To use a custom domain, add it under the service's **Settings → Domains** in the Railway dashboard, then update `PHX_HOST` to match.
+    </Tip>
+  </Step>
+</Steps>
+
+## PostgreSQL on Railway
+
+Railway provides PostgreSQL as a first-class plugin. When the Tymeslot template deploys, Railway provisions a managed Postgres instance and injects the connection variables (`DATABASE_URL` or discrete `PGHOST`/`PGPORT`/etc.) into the Tymeslot service automatically.
+
+You don't need to set `DATABASE_HOST`, `POSTGRES_DB`, `POSTGRES_USER`, or `POSTGRES_PASSWORD` — Railway handles all of that. Backups, version upgrades, and connection pooling are managed by Railway.
+
+## Managing admins
+
+The first user to register on a fresh install is automatically promoted to admin. To promote additional users, use Railway's CLI or the Railway web shell.
+
+**Railway CLI:**
+
+```bash
+railway run bin/tymeslot rpc 'Tymeslot.Release.promote_admin("you@example.com")'
+```
+
+**Railway web shell:**
+
+Open the service in the Railway dashboard, click **Shell**, and paste the same command directly:
+
+```bash
+bin/tymeslot rpc 'Tymeslot.Release.promote_admin("you@example.com")'
+```
+
+The user must already have a registered account. To demote an admin or list all current admins:
+
+```bash
+# Demote
+railway run bin/tymeslot rpc 'Tymeslot.Release.demote_admin("you@example.com")'
+
+# List all admins
+railway run bin/tymeslot rpc 'Tymeslot.Release.list_admins()'
+```
+
+See [ADMIN.md](https://github.com/Tymeslot/tymeslot/blob/main/docs/ADMIN.md) for the full reference.
+
+## Next steps
+
+- **Configure email** — add `EMAIL_ADAPTER`, `SMTP_*`, or `POSTMARK_API_KEY` variables under the Railway service's **Variables** tab.
+- **Connect calendar integrations** — Google Calendar, Outlook, and CalDAV from **Dashboard → Integrations** once you're logged in.
+- **Full environment variable reference** — every supported variable with annotations at the [Environment Variable Reference](https://tymeslot.app/docs/env-reference).

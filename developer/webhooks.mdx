@@ -1,0 +1,274 @@
+---
+title: "Tymeslot Webhooks: Automate Meeting Events"
+sidebarTitle: "Webhooks"
+description: "Receive HTTP POST callbacks when meetings are created, cancelled, or rescheduled. Verify payloads with HMAC signatures and integrate with n8n, Zapier, or Make."
+---
+
+Tymeslot webhooks let you react to booking activity in real time. Whenever a meeting is created, cancelled, or rescheduled, Tymeslot sends an HTTP POST request with a signed JSON payload to an HTTPS endpoint you control. You can feed that data straight into n8n, Zapier, Make, or your own backend — no polling required.
+
+<Note>
+  Webhooks require the **Pro plan** on the managed cloud. If you self-host Tymeslot, all webhook features are available at no extra cost — the `automations_allowed` feature gate is unrestricted by default on self-hosted instances.
+</Note>
+
+## Available events
+
+Tymeslot fires webhooks for three meeting lifecycle events, sourced directly from `Tymeslot.Webhooks.available_events/0`:
+
+| Event | Trigger |
+|---|---|
+| `meeting.created` | A new booking is confirmed |
+| `meeting.cancelled` | An existing booking is cancelled |
+| `meeting.rescheduled` | A booking's time is changed |
+
+You choose which events each webhook subscribes to when you create it in **Dashboard → Automation → Webhooks**. A single endpoint can subscribe to one, two, or all three events.
+
+## How delivery works
+
+When a subscribed event fires, Tymeslot schedules delivery via an [Oban](https://github.com/sorentwo/oban) background job. The job sends an HTTP POST to your URL with the following headers:
+
+| Header | Value |
+|---|---|
+| `Content-Type` | `application/json` |
+| `User-Agent` | `Tymeslot-Webhooks/1.0` |
+| `X-Tymeslot-Timestamp` | ISO 8601 UTC timestamp of the request |
+| `X-Tymeslot-Token` | HMAC-signed token — use this to verify the sender |
+
+The endpoint must return a `2xx` status code to be considered successful. Any other status code (or a network failure) counts as a failed delivery.
+
+<Warning>
+  After **10 consecutive delivery failures**, Tymeslot automatically disables the webhook and records a `disabled_reason`. You can re-enable it at any time from **Dashboard → Automation → Webhooks** — re-enabling also resets the failure counter.
+</Warning>
+
+### Verifying the token
+
+The `X-Tymeslot-Token` header contains the webhook's signing secret. Reject any request that is missing the header or presents a token that doesn't match the one shown in your dashboard. Store the secret securely and never commit it to version control.
+
+## Payload structure
+
+Every meeting-event payload follows the same envelope. Fields are sourced directly from `Tymeslot.Webhooks.PayloadBuilder.build_payload/3`:
+
+```json
+{
+  "event": "meeting.created",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "webhook_id": "123",
+  "data": {
+    "meeting": {
+      "id": 1,
+      "uid": "abc123def456",
+      "title": "30-minute call",
+      "summary": "Quick catch-up",
+      "description": "Let's connect and discuss the project.",
+      "start_time": "2024-01-15T14:00:00Z",
+      "end_time": "2024-01-15T14:30:00Z",
+      "duration": 30,
+      "status": "confirmed",
+      "meeting_type": "30min",
+      "location": "Google Meet",
+      "organizer": {
+        "name": "Sarah Chen",
+        "email": "sarah@example.com",
+        "title": "Product Manager",
+        "user_id": 42
+      },
+      "attendee": {
+        "name": "Alex Rivera",
+        "email": "alex@example.com",
+        "phone": "+1 555 0100",
+        "company": "Acme Corp",
+        "timezone": "America/New_York",
+        "message": "Looking forward to it!"
+      },
+      "urls": {
+        "view": "https://tymeslot.app/sarah/meeting/abc123def456",
+        "reschedule": "https://tymeslot.app/sarah/meeting/abc123def456/reschedule",
+        "cancel": "https://tymeslot.app/sarah/meeting/abc123def456/cancel",
+        "meeting": "https://meet.google.com/abc-defg-hij"
+      },
+      "video": {
+        "enabled": true,
+        "room_id": "room_xyz789",
+        "organizer_url": "https://meet.google.com/abc-defg-hij?authuser=1",
+        "attendee_url": "https://meet.google.com/abc-defg-hij"
+      },
+      "created_at": "2024-01-14T09:00:00Z",
+      "updated_at": "2024-01-15T10:30:00Z"
+    }
+  }
+}
+```
+
+When video is not enabled, the `video` object is simply `{ "enabled": false }`.
+
+### Cancellation payload
+
+When `event` is `"meeting.cancelled"`, the `meeting` object includes an additional `cancellation` field:
+
+```json
+{
+  "event": "meeting.cancelled",
+  "data": {
+    "meeting": {
+      "status": "cancelled",
+      "cancellation": {
+        "cancelled_at": "2024-01-15T11:00:00Z",
+        "reason": "Scheduling conflict"
+      }
+    }
+  }
+}
+```
+
+## Payload field reference
+
+<ResponseField name="event" type="string" required>
+  The event type. One of `meeting.created`, `meeting.cancelled`, `meeting.rescheduled`.
+</ResponseField>
+
+<ResponseField name="timestamp" type="string" required>
+  ISO 8601 UTC timestamp of when the webhook was dispatched.
+</ResponseField>
+
+<ResponseField name="webhook_id" type="string" required>
+  The numeric ID of the webhook configuration that triggered this delivery, as a string.
+</ResponseField>
+
+<ResponseField name="data.meeting" type="object" required>
+  The full meeting record at the time the event fired.
+
+  <Expandable title="meeting fields">
+    <ResponseField name="id" type="integer">
+      Internal numeric ID of the meeting.
+    </ResponseField>
+    <ResponseField name="uid" type="string">
+      Unguessable public identifier. Used in cancel, reschedule, and view URLs.
+    </ResponseField>
+    <ResponseField name="title" type="string">
+      Meeting type display name, e.g. `"30-minute call"`.
+    </ResponseField>
+    <ResponseField name="summary" type="string">
+      Short summary shown on confirmation pages.
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Full meeting description, set on the meeting type.
+    </ResponseField>
+    <ResponseField name="start_time" type="string">
+      ISO 8601 UTC start time.
+    </ResponseField>
+    <ResponseField name="end_time" type="string">
+      ISO 8601 UTC end time.
+    </ResponseField>
+    <ResponseField name="duration" type="integer">
+      Duration in minutes.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      `"confirmed"` for active bookings; `"cancelled"` after cancellation.
+    </ResponseField>
+    <ResponseField name="meeting_type" type="string">
+      The slug of the meeting type (e.g. `"30min"`, `"60min"`).
+    </ResponseField>
+    <ResponseField name="location" type="string">
+      Human-readable location string, or the video provider name.
+    </ResponseField>
+    <ResponseField name="organizer" type="object">
+      `name`, `email`, `title`, and `user_id` of the booking page owner.
+    </ResponseField>
+    <ResponseField name="attendee" type="object">
+      `name`, `email`, `phone`, `company`, `timezone`, and `message` provided by the person who booked.
+    </ResponseField>
+    <ResponseField name="urls" type="object">
+      `view`, `reschedule`, `cancel`, and `meeting` (the video link or external room URL) links.
+    </ResponseField>
+    <ResponseField name="video" type="object">
+      `enabled` (boolean). When `true`: `room_id`, `organizer_url`, `attendee_url`, `created_at`, `expires_at`.
+    </ResponseField>
+    <ResponseField name="cancellation" type="object">
+      Present only when `status` is `"cancelled"`. Contains `cancelled_at` (ISO 8601) and `reason` (string, may be `null`).
+    </ResponseField>
+    <ResponseField name="created_at" type="string">
+      ISO 8601 UTC timestamp when the booking was first created.
+    </ResponseField>
+    <ResponseField name="updated_at" type="string">
+      ISO 8601 UTC timestamp of the most recent update.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Test payload
+
+Use the **Test** button in the dashboard, or call the connection-test function directly. Tymeslot sends a minimal test payload with no meeting data:
+
+```json
+{
+  "event": "webhook.test",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "webhook_id": "test",
+  "data": {
+    "message": "This is a test webhook from Tymeslot. If you receive this, your webhook is configured correctly!",
+    "test": true
+  }
+}
+```
+
+A `2xx` response from your endpoint confirms the URL is reachable and the connection is healthy.
+
+## Auto-disable behaviour
+
+Tymeslot tracks consecutive failures on every webhook (`failure_count` on the `WebhookSchema`). The counter resets to zero on any successful delivery. If `failure_count` reaches **10**, the webhook is automatically disabled:
+
+- `is_active` is set to `false`
+- `disabled_at` is stamped with the current UTC time
+- `disabled_reason` records the error that triggered the final failure
+
+To re-enable, go to **Dashboard → Automation → Webhooks**, find the disabled webhook (it is marked with a "Disabled" badge), and click **Re-enable**. This resets the failure counter and resumes delivery.
+
+## Integration examples
+
+<Tabs>
+  <Tab title="n8n">
+    1. Create a new workflow in n8n.
+    2. Add a **Webhook** trigger node.
+    3. Copy the generated webhook URL into Tymeslot's webhook settings.
+    4. Set the **Authentication** dropdown in n8n to **Header Auth**, key `X-Tymeslot-Token`, value matching your webhook token.
+    5. Add downstream nodes (e.g. send a Slack message, create a CRM contact) connected to the trigger.
+    6. Activate the workflow and click **Test** in Tymeslot to verify end-to-end delivery.
+  </Tab>
+  <Tab title="Zapier">
+    1. Create a new Zap and choose **Webhooks by Zapier** as the trigger app.
+    2. Select **Catch Hook** as the trigger event.
+    3. Copy the Zapier webhook URL into Tymeslot's webhook settings, then send a test payload.
+    4. Use Zapier's **Filter** step to branch on `event` (`meeting.created`, `meeting.cancelled`, etc.).
+    5. Map `data.meeting.attendee.email`, `data.meeting.start_time`, and other fields to your action app.
+  </Tab>
+  <Tab title="Make (Integromat)">
+    1. Add a **Webhooks → Custom webhook** module as the trigger in your scenario.
+    2. Copy the Make webhook URL into Tymeslot's webhook settings.
+    3. Click **Send a test webhook** in Tymeslot — Make captures the data structure automatically.
+    4. Add a **Router** module to split flows by `event` type.
+    5. Connect your downstream modules (Google Sheets, Notion, email, etc.) to each route.
+  </Tab>
+  <Tab title="Custom endpoint">
+    Any HTTP server that accepts POST requests works. Here is a minimal example using a Node.js/Express handler:
+
+    ```javascript
+    app.post('/tymeslot-webhook', (req, res) => {
+      const token = req.headers['x-tymeslot-token'];
+
+      // Verify the token matches your stored secret
+      if (token !== process.env.TYMESLOT_WEBHOOK_TOKEN) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { event, data } = req.body;
+
+      if (event === 'meeting.created') {
+        console.log('New booking from', data.meeting.attendee.email);
+        // ... your logic here
+      }
+
+      // Always respond 2xx to acknowledge receipt
+      res.status(200).json({ ok: true });
+    });
+    ```
+  </Tab>
+</Tabs>

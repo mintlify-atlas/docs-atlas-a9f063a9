@@ -1,0 +1,118 @@
+---
+title: "Data-at-Rest Encryption for Credentials"
+sidebarTitle: "Data Encryption"
+description: "Tymeslot encrypts calendar tokens, CalDAV passwords, and API keys with AES-256-GCM. Learn how to configure a dedicated DATA_ENCRYPTION_KEY."
+---
+
+Tymeslot encrypts sensitive integration credentials at rest using AES-256-GCM. This applies to every piece of secret material that leaves the user's browser and is stored in the database: OAuth tokens for Google Calendar and Outlook, CalDAV passwords, video conferencing API keys (Google Meet, Microsoft Teams), Slack and Telegram bot tokens, and webhook signing secrets.
+
+## What is encrypted
+
+The following credential types are encrypted before being written to the database:
+
+- Google Calendar and Outlook OAuth access and refresh tokens
+- CalDAV server passwords (Nextcloud, Radicale, Zimbra, mailbox.org)
+- Video conferencing API keys and OAuth tokens
+- Slack Incoming Webhook URLs and OAuth tokens
+- Telegram bot tokens and chat IDs
+- Outbound webhook signing secrets
+
+Encryption is transparent to users and administrators — credentials are decrypted automatically at read time and re-encrypted on update.
+
+## Default behaviour and its drawback
+
+When `DATA_ENCRYPTION_KEY` is not set, Tymeslot derives the AES-256-GCM encryption key from `SECRET_KEY_BASE`. This works, but it welds two concerns together: the cookie-signing secret and the data-at-rest protection key are the same material.
+
+The consequence is that **rotating `SECRET_KEY_BASE` — for example, after a suspected token leak — would make every stored credential undecryptable**, because the derived encryption key would change. Every user would need to reconnect every integration.
+
+<Warning>
+  If you ever need to rotate `SECRET_KEY_BASE`, you must first set `DATA_ENCRYPTION_KEY` and run the re-encryption sweep described below. Only after the sweep completes can `SECRET_KEY_BASE` be changed safely.
+</Warning>
+
+A startup warning is logged whenever the application starts without `DATA_ENCRYPTION_KEY` set:
+
+```
+DATA_ENCRYPTION_KEY is not set; data-at-rest credentials are still encrypted
+with a key derived from SECRET_KEY_BASE. Rotating SECRET_KEY_BASE would make
+them undecryptable. Set DATA_ENCRYPTION_KEY (e.g. `openssl rand -base64 48`)
+and run the re-encryption sweep (see README, "Data-at-rest encryption") to
+decouple them.
+```
+
+## Setting DATA_ENCRYPTION_KEY
+
+`DATA_ENCRYPTION_KEY` is an optional but strongly recommended environment variable that provides a dedicated encryption key, independent of `SECRET_KEY_BASE`. Once set, the two secrets are fully decoupled: you can rotate `SECRET_KEY_BASE` freely without affecting stored credentials.
+
+Generate a high-entropy key with:
+
+```bash
+openssl rand -base64 48 | tr -d '\n'
+```
+
+Add it to your `.env`:
+
+```bash
+DATA_ENCRYPTION_KEY=<paste the generated value here>
+```
+
+<Warning>
+  `DATA_ENCRYPTION_KEY` **must stay stable across all restarts and upgrades for the life of the deployment**. Losing this key makes every stored credential unrecoverable. Store it in a secrets manager or a secure off-server backup alongside your other critical secrets.
+</Warning>
+
+## Enabling it on an existing install
+
+If you are adding `DATA_ENCRYPTION_KEY` to an instance that already has stored credentials, follow these three steps. Skipping the re-encryption sweep leaves existing credentials encrypted under the old (derived) key — they still decrypt correctly, but `SECRET_KEY_BASE` remains coupled to the data until the sweep runs.
+
+<Steps>
+  <Step title="Generate the key and add it to your environment">
+    ```bash
+    echo "DATA_ENCRYPTION_KEY=$(openssl rand -base64 48 | tr -d '\n')" >> .env
+    ```
+
+    Commit the new `.env` to your secrets store before proceeding.
+  </Step>
+
+  <Step title="Restart the container">
+    ```bash
+    docker restart tymeslot
+    ```
+
+    After the restart, Tymeslot begins writing **new** credential values under the new key. Existing values continue to decrypt correctly under the old derived key — nothing breaks for running users.
+  </Step>
+
+  <Step title="Run the re-encryption sweep">
+    Migrate all existing credentials onto the new key by running:
+
+    ```bash
+    docker exec tymeslot /app/bin/tymeslot eval \
+      'Ecto.Migrator.with_repo(Tymeslot.Repo, fn _ -> IO.inspect(Tymeslot.Security.CredentialReencryption.run(), label: "reencryption") end)'
+    ```
+
+    The command prints a summary including a `migrated_values` count. Re-run the sweep until `migrated_values` reaches `0`, confirming that every stored credential is now encrypted under `DATA_ENCRYPTION_KEY`:
+
+    ```
+    reencryption: %{migrated_values: 0, already_current: 47, errors: 0}
+    ```
+
+    The sweep is **idempotent** — it is safe to run it multiple times. Credentials already on the current key are skipped.
+  </Step>
+</Steps>
+
+Only after the sweep reports `migrated_values: 0` is it safe to rotate `SECRET_KEY_BASE` without disrupting stored integrations.
+
+## Key rotation
+
+The encryption format is versioned, which means it is built for key rotation, not just the one-time migration described above. When a new key version is introduced in a future release, it gets its own version tag and coexists with the existing key: new writes use the new key, existing values continue opening under the previous key, and a re-encryption sweep walks the entire dataset onto the new key. Only once the sweep reports zero migrated values is the previous key retired. No credential is ever silently lost during this process.
+
+<Warning>
+  **Do not rotate by simply changing `DATA_ENCRYPTION_KEY` to a new value in place.** Replacing the value directly would immediately strand every credential already written under the old key — the old key would no longer be in the keyring, making those credentials permanently undecryptable. True key rotation keeps both keys available until the sweep finishes. When key rotation support is available in a release, follow the upgrade notes for that version rather than editing the variable by hand.
+</Warning>
+
+## Summary
+
+| Scenario | Action |
+|---|---|
+| Fresh install | Generate `DATA_ENCRYPTION_KEY` before first start |
+| Existing install without `DATA_ENCRYPTION_KEY` | Add key, restart, run sweep |
+| Rotate `SECRET_KEY_BASE` | Must complete sweep first (if `DATA_ENCRYPTION_KEY` not yet set) |
+| Lost `DATA_ENCRYPTION_KEY` | Stored credentials are unrecoverable; users must reconnect integrations |

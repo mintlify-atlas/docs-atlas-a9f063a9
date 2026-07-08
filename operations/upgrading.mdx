@@ -1,0 +1,135 @@
+---
+title: "Upgrade Tymeslot to a New Version"
+sidebarTitle: "Upgrading"
+description: "Update a self-hosted Tymeslot instance. Pull the latest Docker image, run database migrations automatically on startup, and handle volume rename for older installs."
+---
+
+Upgrading a self-hosted Tymeslot instance is designed to be straightforward: database migrations run automatically when the container starts, so there is no separate migration step to remember. The general process is to pull the new image, replace the running container, and let startup handle the rest. This page covers the exact commands for each deployment method, a note about a volume rename that affects older installs, and how to pin to a specific version.
+
+<Note>
+  Before upgrading, check the [CHANGELOG](https://github.com/Tymeslot/tymeslot/blob/main/CHANGELOG) and GitHub Releases page for the version you are targeting. Entries marked `[BREAKING]` require extra attention — read the notes for that release before proceeding.
+</Note>
+
+## Migrations run automatically
+
+Tymeslot's container entrypoint (`start-docker.sh`) runs `bin/tymeslot eval` to apply any pending Ecto migrations before starting the Phoenix server. You do not need to exec into the container or run any commands manually — simply start the new container and migrations will be applied on the way up.
+
+## Docker (prebuilt image)
+
+<Steps>
+  <Step title="Pull the latest image">
+    ```bash
+    docker pull luka1thb/tymeslot:latest
+    ```
+  </Step>
+
+  <Step title="Stop and remove the current container">
+    ```bash
+    docker stop tymeslot && docker rm tymeslot
+    ```
+
+    This removes the container but leaves your named volumes (`tymeslot_pg` and `tymeslot_data`) intact. Your data is safe.
+  </Step>
+
+  <Step title="Start a new container">
+    Re-run your original `docker run` command with the same volume mounts and environment variables. For example:
+
+    ```bash
+    docker run -d \
+      --name tymeslot \
+      -p 4000:4000 \
+      -e SECRET_KEY_BASE="..." \
+      -e PHX_HOST=yourdomain.com \
+      -v tymeslot_data:/app/data \
+      -v tymeslot_pg:/var/lib/postgresql/data \
+      luka1thb/tymeslot:latest
+    ```
+
+    Database migrations run automatically during startup.
+  </Step>
+</Steps>
+
+## Docker Compose (build from source)
+
+<Steps>
+  <Step title="Pull the latest source">
+    ```bash
+    git pull origin main
+    ```
+  </Step>
+
+  <Step title="Stop the current stack">
+    ```bash
+    docker compose down
+    ```
+  </Step>
+
+  <Step title="Rebuild and start">
+    ```bash
+    docker compose up -d --build
+    ```
+
+    Compose rebuilds the image from the updated source and starts the container. Migrations run automatically on startup.
+  </Step>
+</Steps>
+
+## Pinning to a specific version
+
+Replace `latest` with any published release tag to pin to a specific version:
+
+```bash
+docker pull luka1thb/tymeslot:<VERSION>
+```
+
+For example, to run version 1.4.0:
+
+```bash
+docker pull luka1thb/tymeslot:1.4.0
+```
+
+The full list of published tags is available on [Docker Hub](https://hub.docker.com/r/luka1thb/tymeslot/tags). Pinning is recommended for production environments where you want explicit control over when you take new changes.
+
+## Volume rename for older installs
+
+<Warning>
+  If you installed Tymeslot before the volume rename, your PostgreSQL data is stored in the old volume name. Starting a fresh container against `tymeslot_pg` will find an empty database.
+
+  **Earlier versions** used `postgres_data` (build script or manual `docker run`) or `<project>_postgres_data` (Docker Compose). **Both now use `tymeslot_pg`.**
+
+  To upgrade without losing data, re-point the PostgreSQL mount at your existing volume:
+
+  ```bash
+  docker run -d \
+    --name tymeslot \
+    -p 4000:4000 \
+    -e SECRET_KEY_BASE="..." \
+    -e PHX_HOST=yourdomain.com \
+    -v tymeslot_data:/app/data \
+    -v postgres_data:/var/lib/postgresql/data \
+    luka1thb/tymeslot:latest
+  ```
+
+  Alternatively, migrate the data into the new volume name once, then switch to using `tymeslot_pg` going forward. Either approach keeps your existing data intact.
+</Warning>
+
+## Cloudron
+
+On Cloudron, updates are handled through the dashboard. When a new version is published to the community package, you will see an update prompt on the Tymeslot app tile. Apply it with one click, or use the CLI:
+
+```bash
+cloudron update --app tymeslot.yourdomain.com
+```
+
+Cloudron takes a backup before applying the update and runs health checks afterward. No manual migration step is needed.
+
+If you installed via the manual Docker build (Option B), rebuild and push the image first, then update:
+
+```bash
+docker build -t your-registry/tymeslot-cloudron:latest .
+docker push your-registry/tymeslot-cloudron:latest
+cloudron update --app tymeslot.yourdomain.com
+```
+
+## Railway
+
+Railway auto-deploys when you push to the connected branch. To update a Railway deployment to the latest published image, redeploy from the Railway dashboard or trigger a new deploy via the CLI. Migrations run automatically on startup just as with Docker.

@@ -1,0 +1,173 @@
+---
+title: "Embed a Tymeslot Booking Widget on Any Website"
+sidebarTitle: "Embed Widget"
+description: "Add an inline, popup, or floating booking button to any page with a single script tag. Tokens are HMAC-signed and domain-locked for security."
+---
+
+The Tymeslot booking widget lets you drop a fully functional booking page directly onto any website — no redirects, no separate tab. Load one `<script>` tag, choose how you want it to appear, and you're done. The embed supports three presentation modes: an inline widget that replaces a `<div>`, a popup modal that opens on demand, and a floating button that sits in the page corner.
+
+<Note>
+  The exact embed snippet — including your pre-filled `data-username` — is generated for you in **Dashboard → Embed**. The examples on this page use placeholder values; always copy from your dashboard for a working snippet.
+</Note>
+
+## Getting the embed snippet
+
+Go to **Dashboard → Embed**. Tymeslot shows you a ready-to-paste snippet for each embedding mode, with your username already populated. Copy the snippet and paste it into your site's HTML.
+
+If you self-host Tymeslot, replace `tymeslot.app` in every script `src` attribute with the domain you set for `PHX_HOST`. The widget script is served from the same origin as your instance.
+
+<Note>
+  **Self-hosted instances:** substitute `https://tymeslot.app` with your own domain throughout every code example on this page.
+</Note>
+
+## Security model
+
+Before the booking page loads inside an iframe, Tymeslot verifies two things on the live WebSocket connection:
+
+- **Token integrity** — `EmbedTokenPlug` signs a token containing your username and the embedding page's origin at HTTP request time. `EmbedAuthHook` verifies the signature on the LiveView mount.
+- **Domain allowlist** — the signed `parent-origin` is checked against your profile's `allowed_embed_domains`. The widget only renders if the embedding origin matches an entry you have approved in **Dashboard → Embed → Allowed domains**.
+
+If the origin is not on your allowlist, the iframe loads a neutral "embedding not available" notice instead of your booking page, and a `tymeslot-embed-blocked` message is posted back to the parent page. This means a third party cannot hotlink your widget onto their own site.
+
+Wildcard subdomains are supported — adding `*.example.com` allows `app.example.com`, `staging.example.com`, and so on. Adding `www.example.com` automatically also allows `example.com` (and vice versa), so you don't need to allowlist both.
+
+## Embedding modes
+
+<Tabs>
+  <Tab title="Inline">
+    The inline mode replaces a `<div>` on your page with the full booking interface. Use this on dedicated booking pages, landing pages, or any page where you want the calendar visible without a click.
+
+    ```html
+    <!-- 1. Add a target container where you want the widget to appear -->
+    <div
+      id="tymeslot-booking"
+      data-username="sarah"
+      data-initial-height="600"
+    ></div>
+
+    <!-- 2. Load the embed script — it finds the div automatically -->
+    <script src="https://tymeslot.app/embed.js" defer></script>
+    ```
+
+    The widget starts at `data-initial-height` pixels (default `400`) while the iframe loads, then grows and shrinks to match the booking page's content height automatically. There is no internal scrollbar on unconstrained inline embeds.
+
+    **Optional `data-*` attributes:**
+
+    | Attribute | Description |
+    |---|---|
+    | `data-username` | Your Tymeslot username (required) |
+    | `data-initial-height` | Placeholder height in px before the iframe reports its size. Default `400`. |
+    | `data-max-width` | Maximum widget width in px. Default `640`. |
+    | `data-theme` | Override the theme ID (numeric string, e.g. `"1"` for Quill). |
+    | `data-primary-color` | Hex colour override, e.g. `"#6366f1"`. |
+    | `data-locale` | Force a locale, e.g. `"de"` for German. |
+    | `data-layout` | `"default"` (up to 640 px wide) or `"column"` (up to 1000 px, no min-height floor). |
+
+    You can also initialise inline embeds programmatically:
+
+    ```javascript
+    TymeslotBooking.embed('#my-container', 'sarah', {
+      theme: '2',
+      locale: 'de',
+      layout: 'column'
+    });
+    ```
+  </Tab>
+  <Tab title="Popup">
+    The popup mode opens the booking widget in a centred modal overlay. Use this for CTAs on marketing pages, blog posts, or anywhere you don't want the calendar visible until the visitor clicks.
+
+    ```html
+    <!-- Button that opens the popup -->
+    <button onclick="TymeslotBooking.open('sarah')">
+      Book a call
+    </button>
+
+    <!-- Load the embed script once, anywhere on the page -->
+    <script src="https://tymeslot.app/embed.js" defer></script>
+    ```
+
+    The modal is `1000 px` wide by default on desktop and collapses to full-screen on viewports below `768 px`. Press **Escape** or click outside the modal to close it. Focus is trapped inside the dialog while it is open (WCAG 2.1 compliant).
+
+    **Opening with options:**
+
+    ```javascript
+    TymeslotBooking.open('sarah', {
+      theme: '1',
+      locale: 'en',
+      primaryColor: '#14B8A6',
+      maxWidth: 800
+    });
+    ```
+
+    **Closing programmatically:**
+
+    ```javascript
+    TymeslotBooking.close();
+    ```
+  </Tab>
+  <Tab title="Floating button">
+    The floating mode adds a fixed calendar button to the bottom-right corner of every page. Clicking it opens the popup modal. Use this for persistent booking access across a multi-page site.
+
+    ```html
+    <script src="https://tymeslot.app/embed.js" defer></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        TymeslotBooking.initFloating('sarah', {
+          buttonColor: '#14B8A6'
+        });
+      });
+    </script>
+    ```
+
+    The button is a 64 × 64 px circle fixed at `bottom: 24px; right: 24px` with a calendar icon. It has a visible hover state, an `aria-label="Book a meeting"` attribute for screen readers, and can be removed and re-initialised at any time.
+
+    **Options:**
+
+    | Option | Description |
+    |---|---|
+    | `buttonColor` | Hex colour for the button background. Default `#14B8A6` (teal). |
+    | `theme` | Theme ID string override. |
+    | `locale` | Force a locale. |
+    | `primaryColor` | Hex colour override passed to the booking page. |
+
+    To remove an existing floating button before re-initialising:
+
+    ```javascript
+    const btn = document.getElementById('tymeslot-floating-button');
+    if (btn) btn.remove();
+    ```
+  </Tab>
+</Tabs>
+
+## Iframe auto-resize
+
+The booking page posts a `tymeslot-resize` message to the parent window on a 50 ms loop, reporting its current content height. `embed.js` catches these messages and updates the wrapper `<div>` height so the iframe always matches content — growing when steps expand (e.g. the booking form) and shrinking when they collapse (e.g. after confirmation).
+
+The origin of every resize message is checked against `BASE_URL` (derived from the `embed.js` `src` attribute) before it is acted on. Messages from any other origin are silently ignored.
+
+If you set an explicit `height` or `max-height` on the container element, the widget detects the constraint and caps the iframe at that size — the booking page becomes scrollable inside the iframe rather than resizing the container.
+
+## Error handling
+
+If the booking page fails to load within 15 seconds, `embed.js` retries up to twice with a fresh URL. If all retries fail, the widget replaces the loading spinner with a user-facing error message: _"Booking widget is taking too long to load."_
+
+You can display the same error manually:
+
+```javascript
+TymeslotBooking.showError('#tymeslot-booking');
+```
+
+## Self-hosted domain substitution
+
+If you run your own Tymeslot instance, every script `src` and URL in the examples above must point to your domain instead of `tymeslot.app`. The embed script derives `BASE_URL` from the `src` attribute of the `<script>` tag, so the widget automatically posts resize messages to the correct origin.
+
+```html
+<!-- Self-hosted example -->
+<div
+  id="tymeslot-booking"
+  data-username="sarah"
+></div>
+<script src="https://scheduling.mycompany.com/embed.js" defer></script>
+```
+
+No other configuration is needed — everything else (token signing, domain verification, iframe resize) works the same regardless of the host domain.

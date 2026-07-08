@@ -1,0 +1,204 @@
+---
+title: "Install Tymeslot on Cloudron"
+sidebarTitle: "Cloudron"
+description: "Deploy Tymeslot on Cloudron for automatic SSL, one-click updates, built-in backups, and zero server management. Supports community package and manual install."
+---
+
+Cloudron is a self-hosting platform that wraps Docker apps with automatic SSL, built-in PostgreSQL, scheduled backups, health monitoring, and a polished dashboard. Tymeslot integrates natively with Cloudron's addons — the database, mail relay, and OIDC SSO are all wired up automatically, so there's very little to configure by hand. Choose the community package for the simplest path, or build from source if you're running a custom fork.
+
+## Prerequisites
+
+- **Cloudron** version 5.3.0 or higher
+- **Admin access** to your Cloudron dashboard
+- **A domain name** already configured in Cloudron
+
+## Installation
+
+<Tabs>
+  <Tab title="Option A — Community package">
+    The community package gives you the same one-click install and update experience as official Cloudron apps. Cloudron handles the Docker image, health checks, and version upgrades automatically.
+
+    <Steps>
+      <Step title="Open the App Store">
+        Log into your Cloudron dashboard and navigate to **App Store**.
+      </Step>
+
+      <Step title="Install via URL">
+        Click **Install via URL** and paste the following URL:
+
+        ```
+        https://raw.githubusercontent.com/Tymeslot/tymeslot/main/CloudronVersions.json
+        ```
+      </Step>
+
+      <Step title="Choose a location and install">
+        Pick a subdomain (e.g. `tymeslot.yourdomain.com`) and click **Install**. Cloudron pulls the image, creates the PostgreSQL database, and starts the container.
+      </Step>
+
+      <Step title="Set required environment variables">
+        After installation completes, set the required variables via the dashboard **Environment** tab or the Cloudron CLI:
+
+        ```bash
+        SECRET=$(openssl rand -base64 64 | tr -d '\n')
+        cloudron env set --app tymeslot.yourdomain.com \
+          SECRET_KEY_BASE=$SECRET \
+          PHX_HOST=tymeslot.yourdomain.com \
+          PORT=4000
+        ```
+
+        <Note>
+          `PHX_HOST` must match your Cloudron domain exactly. If unset, Tymeslot falls back to the `CLOUDRON_APP_DOMAIN` variable that Cloudron injects automatically — but setting it explicitly is recommended.
+        </Note>
+      </Step>
+
+      <Step title="Open the app">
+        Tymeslot is now available at `https://tymeslot.yourdomain.com`. SSL is configured automatically by Cloudron. Register the first account — it will be promoted to admin automatically.
+      </Step>
+    </Steps>
+
+    When a new Tymeslot version is published, you'll see an update prompt in the dashboard. Apply it with one click or via CLI:
+
+    ```bash
+    cloudron update --app tymeslot.yourdomain.com
+    ```
+  </Tab>
+
+  <Tab title="Option B — Manual Docker build">
+    Build and install from source using the Cloudron CLI. Use this path when you want to run a custom fork or a version not yet published to the community package.
+
+    <Steps>
+      <Step title="Clone and build the image">
+        ```bash
+        git clone https://github.com/Tymeslot/tymeslot.git
+        cd tymeslot
+        docker build -t your-registry/tymeslot-cloudron:latest .
+        docker push your-registry/tymeslot-cloudron:latest
+        ```
+      </Step>
+
+      <Step title="Install via Cloudron CLI">
+        ```bash
+        cloudron install --image your-registry/tymeslot-cloudron:latest
+        ```
+      </Step>
+
+      <Step title="Set required environment variables">
+        ```bash
+        SECRET=$(openssl rand -base64 64 | tr -d '\n')
+        cloudron env set --app tymeslot.yourdomain.com \
+          SECRET_KEY_BASE=$SECRET \
+          PHX_HOST=tymeslot.yourdomain.com \
+          PORT=4000
+        ```
+      </Step>
+    </Steps>
+
+    With this method you manage image builds and updates yourself. To update, rebuild the image, push it, then run:
+
+    ```bash
+    docker build -t your-registry/tymeslot-cloudron:latest .
+    docker push your-registry/tymeslot-cloudron:latest
+    cloudron update --app tymeslot.yourdomain.com
+    ```
+  </Tab>
+</Tabs>
+
+## Cloudron addons (auto-configured)
+
+Tymeslot automatically detects and uses Cloudron's built-in addons — no manual wiring required.
+
+| Addon | What Tymeslot does |
+|---|---|
+| **PostgreSQL** | Database connection is read from `CLOUDRON_POSTGRESQL_*` automatically |
+| **Sendmail** | Mail relay is used for all outbound email — no `SMTP_*` variables needed |
+| **OIDC** | Cloudron's identity provider appears as an "SSO" button on the login page |
+
+To override the defaults — for example, to use Postmark instead of Cloudron's mail relay — set `EMAIL_ADAPTER` explicitly:
+
+```bash
+cloudron env set --app tymeslot.yourdomain.com \
+  EMAIL_ADAPTER=postmark \
+  EMAIL_FROM_NAME=Tymeslot \
+  EMAIL_FROM_ADDRESS=noreply@yourdomain.com \
+  POSTMARK_API_KEY=your-postmark-api-key
+```
+
+## Setting environment variables
+
+There are two ways to manage environment variables. They can be mixed freely — values set via the CLI always take precedence over values in the `.env` file.
+
+**Option 1 — Cloudron CLI or dashboard (recommended)**
+
+Use `cloudron env set` or the dashboard **Environment** tab. Cloudron persists the values and restarts the app automatically:
+
+```bash
+# Set one or more variables
+cloudron env set --app tymeslot.yourdomain.com KEY=value KEY2=value2
+
+# Inspect current values
+cloudron env list --app tymeslot.yourdomain.com
+```
+
+**Option 2 — `.env` file in the data directory**
+
+Tymeslot reads `/app/data/.env` at boot and loads any keys that are not already set in the environment. This is useful when you have many variables to manage or want to version-control them.
+
+```bash
+# Edit the file directly inside the running container
+cloudron exec --app tymeslot.yourdomain.com -- vi /app/data/.env
+
+# Or push a prepared file from your workstation
+cloudron push --app tymeslot.yourdomain.com ./my-env /app/data/.env
+
+# Restart so the new values take effect
+cloudron restart --app tymeslot.yourdomain.com
+```
+
+The file uses standard dotenv syntax (`KEY=value`, one per line, `#` for comments). It must live in `/app/data` — `/app` itself is read-only on Cloudron and is wiped on every upgrade.
+
+## Becoming an admin
+
+The first user to register on a fresh install is automatically promoted to admin. To promote additional users, open the app's Terminal from the Cloudron dashboard and run:
+
+```bash
+bin/tymeslot rpc 'Tymeslot.Release.promote_admin("you@example.com")'
+```
+
+Or from your workstation using the Cloudron CLI:
+
+```bash
+cloudron exec --app tymeslot.yourdomain.com -- bin/tymeslot rpc 'Tymeslot.Release.promote_admin("you@example.com")'
+```
+
+The user must already have a registered account. `demote_admin` and `list_admins` work identically — see [ADMIN.md](https://github.com/Tymeslot/tymeslot/blob/main/docs/ADMIN.md) for the full reference.
+
+## Useful commands
+
+```bash
+# View application logs
+cloudron logs --app tymeslot.yourdomain.com
+
+# Follow logs in real-time
+cloudron logs --app tymeslot.yourdomain.com --follow
+
+# Restart the app
+cloudron restart --app tymeslot.yourdomain.com
+
+# Check app status
+cloudron status --app tymeslot.yourdomain.com
+
+# Open a shell inside the container
+cloudron exec --app tymeslot.yourdomain.com -- /bin/bash
+
+# Access the Elixir remote console
+cloudron exec --app tymeslot.yourdomain.com -- bin/tymeslot remote
+
+# Access the PostgreSQL console
+cloudron exec --app tymeslot.yourdomain.com -- psql $CLOUDRON_POSTGRESQL_URL
+```
+
+## Next steps
+
+- **Connect calendar integrations** — Google Calendar, Outlook, and CalDAV from **Dashboard → Integrations**.
+- **Configure OAuth providers** — see the [Google OAuth](https://tymeslot.app/docs/google-oauth), [Microsoft OAuth](https://tymeslot.app/docs/microsoft-oauth), and [Generic OIDC/SSO](https://tymeslot.app/docs/oidc-sso) guides.
+- **Full environment variable reference** — every supported variable with annotations at the [Environment Variable Reference](https://tymeslot.app/docs/env-reference).

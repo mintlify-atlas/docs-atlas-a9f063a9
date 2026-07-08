@@ -1,0 +1,130 @@
+---
+title: "Configure Email Delivery for Tymeslot"
+sidebarTitle: "Email"
+description: "Set up SMTP or Postmark to deliver booking confirmations, reminders, password resets, and ICS attachments. Email is required for production deployments."
+---
+
+Email delivery is a hard requirement for any production Tymeslot instance. The platform sends outbound mail for booking confirmations (with ICS calendar attachments), booking reminders, cancellation and reschedule notifications, password reset links, and contact-form submissions. Without a working email adapter, users cannot recover their accounts and invited guests never receive their booking details.
+
+## Why email is required
+
+Every key user-facing workflow depends on outbound email:
+
+- **Booking confirmations** — sent to both the host and the guest immediately after a booking is created, with an `.ics` attachment guests can import into any calendar app.
+- **Reminders** — automated emails sent before a scheduled meeting.
+- **Cancellation and reschedule links** — the only way guests can modify or cancel a booking is through a signed link delivered by email.
+- **Password resets** — standard account recovery flow.
+- **Contact-form submissions** — forwarded to `EMAIL_CONTACT_RECIPIENT`.
+
+<Warning>
+  The default `EMAIL_ADAPTER=test` **silently discards every outgoing message** — no error is shown, no mail is queued, nothing is delivered. This is intentional for development and test environments, but it means password resets, booking confirmations, and all other transactional email will vanish without a trace on a misconfigured production instance. Always set `EMAIL_ADAPTER` to `smtp` or `postmark` before going live.
+</Warning>
+
+## Sender identity variables
+
+Regardless of which adapter you use, set these variables to control how your emails appear to recipients:
+
+| Variable | Default | Description |
+|---|---|---|
+| `EMAIL_FROM_NAME` | `Tymeslot` | Sender display name shown in email clients |
+| `EMAIL_FROM_ADDRESS` | `hello@tymeslot.app` | Sender address — use an address on your own domain |
+| `EMAIL_SUPPORT_ADDRESS` | *(same as `EMAIL_FROM_ADDRESS`)* | Support address shown in email footers |
+| `EMAIL_CONTACT_RECIPIENT` | *(same as `EMAIL_FROM_ADDRESS`)* | Recipient for contact-form submissions |
+
+## Adapter configuration
+
+<Tabs>
+  <Tab title="SMTP">
+    SMTP is the right choice for most self-hosted deployments. It works with any mail provider that supports STARTTLS on port 587 — including Gmail (with an App Password), SendGrid, Mailgun, Brevo, Amazon SES, and your own mail server.
+
+    Set these variables in your `.env`:
+
+    ```bash
+    EMAIL_ADAPTER=smtp
+    EMAIL_FROM_NAME="Your Company"
+    EMAIL_FROM_ADDRESS=noreply@yourdomain.com
+    SMTP_HOST=smtp.example.com
+    SMTP_PORT=587
+    SMTP_USERNAME=your-smtp-username
+    SMTP_PASSWORD=your-smtp-password
+    ```
+
+    ### Provider examples
+
+    <CodeGroup>
+      ```bash Gmail
+      EMAIL_ADAPTER=smtp
+      EMAIL_FROM_NAME="Your Company"
+      EMAIL_FROM_ADDRESS=you@gmail.com
+      SMTP_HOST=smtp.gmail.com
+      SMTP_PORT=587
+      SMTP_USERNAME=you@gmail.com
+      # Use a Google App Password, not your account password.
+      # Generate at: myaccount.google.com/apppasswords
+      SMTP_PASSWORD=your-16-char-app-password
+      ```
+
+      ```bash SendGrid
+      EMAIL_ADAPTER=smtp
+      EMAIL_FROM_NAME="Your Company"
+      EMAIL_FROM_ADDRESS=noreply@yourdomain.com
+      SMTP_HOST=smtp.sendgrid.net
+      SMTP_PORT=587
+      SMTP_USERNAME=apikey
+      # Use your SendGrid API key as the password
+      SMTP_PASSWORD=SG.xxxxxxxxxxxxxxxxxxxx
+      ```
+
+      ```bash Mailgun
+      EMAIL_ADAPTER=smtp
+      EMAIL_FROM_NAME="Your Company"
+      EMAIL_FROM_ADDRESS=noreply@yourdomain.com
+      SMTP_HOST=smtp.mailgun.org
+      SMTP_PORT=587
+      SMTP_USERNAME=postmaster@mg.yourdomain.com
+      SMTP_PASSWORD=your-mailgun-smtp-password
+      ```
+    </CodeGroup>
+
+    <Note>
+      `SMTP_PORT` defaults to `587` (STARTTLS), which is the standard value for almost all providers. Only change it if your provider explicitly requires a different port.
+    </Note>
+  </Tab>
+
+  <Tab title="Postmark">
+    Postmark is recommended for deployments that need high deliverability and detailed per-message delivery tracking. Sign up at [postmarkapp.com](https://postmarkapp.com), create a Server, and copy the Server API Token from the API Tokens tab.
+
+    Set these variables in your `.env`:
+
+    ```bash
+    EMAIL_ADAPTER=postmark
+    EMAIL_FROM_NAME="Your Company"
+    EMAIL_FROM_ADDRESS=noreply@yourdomain.com
+    POSTMARK_API_KEY=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    ```
+
+    <Note>
+      Postmark requires your sender domain to be verified (or use a Postmark-provided sender signature). Add and verify your domain in the Postmark dashboard under **Sender Signatures** before sending from it.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Testing your email configuration
+
+The quickest way to verify that email delivery is working is to use the **Forgot Password** flow:
+
+<Steps>
+  <Step title="Open the login page">
+    Navigate to your Tymeslot instance and click **Forgot password?** on the login screen.
+  </Step>
+  <Step title="Enter your email address">
+    Submit the form with the email address of a registered account.
+  </Step>
+  <Step title="Check your inbox">
+    A password reset email should arrive within a few seconds. If it does not arrive, check `docker logs tymeslot` for delivery errors.
+  </Step>
+</Steps>
+
+<Note>
+  If you see `EMAIL_ADAPTER not set` or `test` adapter messages in the logs, verify that your `.env` changes have been picked up by restarting the container: `docker restart tymeslot`.
+</Note>

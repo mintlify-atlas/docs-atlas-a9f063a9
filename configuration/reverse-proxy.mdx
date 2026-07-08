@@ -1,0 +1,208 @@
+---
+title: "Set Up a Reverse Proxy for Tymeslot"
+sidebarTitle: "Reverse Proxy"
+description: "Run Tymeslot behind Nginx, Caddy, or Traefik to terminate TLS, serve on port 443, and forward requests to Tymeslot on port 4000."
+---
+
+Tymeslot's Phoenix server listens on port 4000 by default and does not handle TLS on its own. For any production deployment you need a reverse proxy in front of it to terminate HTTPS, obtain and renew TLS certificates, and forward requests to Tymeslot on port 4000. This is the standard pattern for Elixir/Phoenix applications in production.
+
+## Environment variables to set when using a proxy
+
+Before configuring your proxy, update two variables in your `.env` so Tymeslot generates correct absolute URLs in emails, OAuth callbacks, and calendar webhook registrations:
+
+```bash
+# Tell Tymeslot your public domain
+PHX_HOST=tymeslot.yourdomain.com
+
+# Tell Tymeslot that links should use https://
+URL_SCHEME=https
+
+# Restrict the Phoenix listener to localhost — the proxy is the only
+# caller, so there is no reason to expose port 4000 publicly
+LISTEN_IP=127.0.0.1
+```
+
+Setting `LISTEN_IP=127.0.0.1` prevents port 4000 from being reachable directly from the internet once a proxy is in place. Without this, anyone who knows your server's IP address can bypass the proxy entirely.
+
+## Proxy configurations
+
+<Tabs>
+  <Tab title="Nginx">
+    The following Nginx server block terminates TLS with Certbot/Let's Encrypt and proxies all traffic to Tymeslot on port 4000. The `Upgrade` and `Connection` headers are required for Phoenix LiveView WebSocket connections.
+
+    ```nginx
+    server {
+        listen 80;
+        server_name tymeslot.yourdomain.com;
+
+        # Redirect all HTTP to HTTPS
+        return 301 https://$host$request_uri;
+    }
+
+    server {
+        listen 443 ssl;
+        server_name tymeslot.yourdomain.com;
+
+        # TLS certificates — issued by Certbot / Let's Encrypt
+        ssl_certificate     /etc/letsencrypt/live/tymeslot.yourdomain.com/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/tymeslot.yourdomain.com/privkey.pem;
+
+        # Recommended TLS settings
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_prefer_server_ciphers off;
+
+        # Increase max body size for file uploads
+        client_max_body_size 25M;
+
+        location / {
+            proxy_pass         http://127.0.0.1:4000;
+            proxy_http_version 1.1;
+
+            # Required for Phoenix LiveView WebSocket
+            proxy_set_header Upgrade    $http_upgrade;
+            proxy_set_header Connection "upgrade";
+
+            # Pass real client IP to Phoenix
+            proxy_set_header X-Real-IP        $remote_addr;
+            proxy_set_header X-Forwarded-For  $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Host             $host;
+
+            # Increase timeouts for long-lived WebSocket connections
+            proxy_read_timeout  3600s;
+            proxy_send_timeout  3600s;
+        }
+    }
+    ```
+
+    After editing the config, test and reload Nginx:
+
+    ```bash
+    sudo nginx -t
+    sudo systemctl reload nginx
+    ```
+
+    To obtain a certificate with Certbot:
+
+    ```bash
+    sudo certbot --nginx -d tymeslot.yourdomain.com
+    ```
+  </Tab>
+
+  <Tab title="Caddy">
+    Caddy automatically provisions and renews TLS certificates from Let's Encrypt with zero additional configuration. This is the simplest option if you do not already have a preferred proxy.
+
+    Add the following block to your `Caddyfile`:
+
+    ```caddy
+    tymeslot.yourdomain.com {
+        # Caddy handles TLS automatically — no ssl_certificate lines needed
+
+        # Proxy to Tymeslot
+        reverse_proxy 127.0.0.1:4000 {
+            # Pass real client IP
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+
+            # Keep WebSocket connections alive
+            transport http {
+                dial_timeout 5s
+                read_timeout 3600s
+                write_timeout 3600s
+            }
+        }
+
+        # Increase max upload body size
+        request_body {
+            max_size 25MB
+        }
+    }
+    ```
+
+    After editing the Caddyfile:
+
+    ```bash
+    caddy reload --config /etc/caddy/Caddyfile
+    ```
+
+    <Note>
+      Caddy requires your domain's DNS A record to point at the server **before** you start it — it performs an ACME HTTP-01 challenge against your public hostname to issue the certificate automatically.
+    </Note>
+  </Tab>
+
+  <Tab title="Traefik">
+    Traefik integrates directly with Docker Compose via container labels. Add the following labels to your Tymeslot service in `docker-compose.yml` and ensure the Traefik container is configured with a Let's Encrypt certificate resolver named `letsencrypt`.
+
+    ```yaml
+    services:
+      tymeslot:
+        image: luka1thb/tymeslot:latest
+        labels:
+          - "traefik.enable=true"
+          - "traefik.http.routers.tymeslot.rule=Host(`tymeslot.yourdomain.com`)"
+          - "traefik.http.routers.tymeslot.entrypoints=websecure"
+          - "traefik.http.routers.tymeslot.tls.certresolver=letsencrypt"
+          - "traefik.http.services.tymeslot.loadbalancer.server.port=4000"
+          # Pass real client IP through Traefik
+          - "traefik.http.middlewares.tymeslot-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
+        environment:
+          - PHX_HOST=tymeslot.yourdomain.com
+          - URL_SCHEME=https
+          # Do NOT set LISTEN_IP=127.0.0.1 when using Traefik — Traefik
+          # reaches the container over the Docker network, not loopback.
+        volumes:
+          - tymeslot_data:/app/data
+          - tymeslot_pg:/var/lib/postgresql/data
+        networks:
+          - traefik-public
+
+    networks:
+      traefik-public:
+        external: true
+    ```
+
+    A minimal Traefik static configuration with Let's Encrypt:
+
+    ```yaml
+    # traefik.yml
+    entryPoints:
+      web:
+        address: ":80"
+        http:
+          redirections:
+            entryPoint:
+              to: websecure
+              scheme: https
+      websecure:
+        address: ":443"
+
+    certificatesResolvers:
+      letsencrypt:
+        acme:
+          email: admin@yourdomain.com
+          storage: /letsencrypt/acme.json
+          httpChallenge:
+            entryPoint: web
+
+    providers:
+      docker:
+        exposedByDefault: false
+    ```
+
+    <Note>
+      When running Tymeslot inside Docker with Traefik, **do not** set `LISTEN_IP=127.0.0.1` — Traefik connects to Tymeslot over the Docker bridge network, not over the loopback interface. Binding to `127.0.0.1` would make the container unreachable.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Summary checklist
+
+After setting up your reverse proxy, verify the following before going live:
+
+- `PHX_HOST` is set to your public domain (without scheme or trailing slash)
+- `URL_SCHEME=https` is set
+- `LISTEN_IP=127.0.0.1` is set (Nginx/Caddy only — not Traefik)
+- TLS certificate is valid and auto-renewing
+- WebSocket connections work (open the app and check the browser console for WebSocket errors)
+- Generated URLs in password reset emails and booking confirmations use `https://`
